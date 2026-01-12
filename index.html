@@ -54,8 +54,8 @@
     <!-- Firebase Imports via Module Script -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        // Added setPersistence and browserLocalPersistence
-        import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        // Added signInWithPopup as fallback
+        import { getAuth, signInWithRedirect, signInWithPopup, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { getFirestore, doc, onSnapshot, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         // --- 🔴 CONFIGURATION SECTION 🔴 ---
@@ -78,6 +78,7 @@
         window.auth = auth;
         window.provider = provider;
         window.signInWithRedirect = signInWithRedirect;
+        window.signInWithPopup = signInWithPopup;
         window.getRedirectResult = getRedirectResult;
         window.signOut = signOut;
         window.onAuthStateChanged = onAuthStateChanged;
@@ -161,6 +162,7 @@
             const [isInputFocused, setIsInputFocused] = useState(false);
             const [loading, setLoading] = useState(true);
             const [authError, setAuthError] = useState(null);
+            const [debugLog, setDebugLog] = useState([]); // Visual debug log
             
             const [editingId, setEditingId] = useState(null);
             const [editText, setEditText] = useState('');
@@ -168,34 +170,45 @@
             const longPressTimer = useRef(null);
             const isScrolling = useRef(false);
 
+            // Log helper
+            const log = (msg) => {
+                console.log(msg);
+                setDebugLog(prev => [...prev.slice(-4), msg]); // Keep last 5 logs
+            };
+
             useEffect(() => {
                 const initAuth = async () => {
                     try {
-                        // Ensure session persists even on redirect
                         if (window.auth && window.setPersistence && window.browserLocalPersistence) {
                             await window.setPersistence(window.auth, window.browserLocalPersistence);
+                            log("Persistence set to LOCAL");
                         }
                     } catch (e) {
-                        console.error("Persistence error", e);
+                        log("Persistence error: " + e.message);
                     }
 
                     if (window.onAuthStateChanged) {
                         window.onAuthStateChanged(window.auth, (currentUser) => {
+                            log(`Auth changed: ${currentUser ? 'User found' : 'No user'}`);
                             setUser(currentUser);
-                            setLoading(false); // FIXED: Always stop loading
-                        });
-                        
-                        // Check for redirect errors
-                        window.getRedirectResult(window.auth).catch((error) => {
-                            console.error(error);
-                            setAuthError(error.message);
                             setLoading(false);
                         });
+                        
+                        window.getRedirectResult(window.auth)
+                            .then((result) => {
+                                if (result) log("Redirect success!");
+                            })
+                            .catch((error) => {
+                                log("Redirect error: " + error.code);
+                                setAuthError(error.message);
+                                setLoading(false);
+                            });
                     } else {
-                        // Fallback polling for slow script load
+                        // Polling fallback
                         const interval = setInterval(() => {
                             if (window.auth) {
                                 clearInterval(interval);
+                                log("Firebase loaded via poll");
                                 window.onAuthStateChanged(window.auth, (currentUser) => {
                                     setUser(currentUser);
                                     setLoading(false);
@@ -228,7 +241,7 @@
                         const lastResetDate = data.lastResetDate;
 
                         if (lastResetDate !== today) {
-                            console.log("New day on server! Resetting tasks.");
+                            log("New day detected. Resetting.");
                             const defaultIds = new Set(DEFAULT_TASKS.map(d => d.id));
                             const preservedCustomTasks = loadedTasks.filter(t => 
                                 !defaultIds.has(t.id) && 
@@ -249,26 +262,41 @@
                             setTasks([...incomplete, ...complete]);
                         }
                     } else {
+                        log("Creating new user doc");
                         window.setDoc(userDocRef, { 
                             items: DEFAULT_TASKS,
                             lastResetDate: today
                         });
                     }
                     setLoading(false);
+                }, (error) => {
+                    log("DB Error: " + error.message);
                 });
 
                 return () => unsubscribe();
             }, [user]);
 
-            const login = async () => {
+            const loginRedirect = async () => {
                 setAuthError(null);
                 setLoading(true);
+                log("Starting Redirect Login...");
                 try {
                     await window.signInWithRedirect(window.auth, window.provider);
                 } catch (error) {
-                    console.error("Login failed", error);
+                    log("Login error: " + error.code);
                     setAuthError(error.message);
                     setLoading(false);
+                }
+            };
+
+            const loginPopup = async () => {
+                setAuthError(null);
+                log("Starting Popup Login...");
+                try {
+                    await window.signInWithPopup(window.auth, window.provider);
+                } catch (error) {
+                    log("Popup error: " + error.code);
+                    setAuthError(error.message);
                 }
             };
 
@@ -399,20 +427,20 @@
             // --- RENDER ---
             if (!user) {
                 return (
-                    <div className="min-h-screen flex items-center justify-center bg-[#f8f5f2] p-6">
+                    <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8f5f2] p-6">
                         <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-sm w-full border border-stone-100">
                             <h1 className="text-4xl font-script text-stone-800 mb-4">Sara's Routine</h1>
-                            <p className="text-stone-500 mb-8">Sign in to sync your checklist across all your devices.</p>
+                            <p className="text-stone-500 mb-8">Sign in to sync your checklist.</p>
                             
                             {authError && (
-                                <div className="mb-6 p-4 bg-red-50 text-red-600 text-left text-xs rounded-xl border border-red-100">
+                                <div className="mb-6 p-4 bg-red-50 text-red-600 text-left text-xs rounded-xl border border-red-100 break-words">
                                     <strong className="block mb-1 text-sm">Sign In Failed</strong>
                                     {authError.includes('unauthorized-domain') ? (
                                         <span>
-                                            <strong>Action Required:</strong> Google blocked this website.<br/><br/>
+                                            <strong>DOMAIN ERROR:</strong><br/>
                                             1. Go to console.firebase.google.com<br/>
-                                            2. Go to Authentication &gt; Settings &gt; Authorized Domains<br/>
-                                            3. Add this website address (e.g., github.io)
+                                            2. Authentication &gt; Settings &gt; Authorized Domains<br/>
+                                            3. Add this site URL exactly as it appears in your browser.
                                         </span>
                                     ) : (
                                         <span>{authError}</span>
@@ -420,14 +448,23 @@
                                 </div>
                             )}
 
-                            {loading ? (
-                                <div className="w-full py-3 text-stone-400 font-medium">Connecting...</div>
-                            ) : (
-                                <button onClick={login} className="w-full bg-[#FF7F50] text-white font-bold py-3 rounded-xl shadow-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2">
+                            <div className="space-y-3">
+                                <button onClick={loginRedirect} className="w-full bg-[#FF7F50] text-white font-bold py-3 rounded-xl shadow-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2">
                                     <Cloud className="w-5 h-5" />
-                                    <span>Sign in with Google</span>
+                                    <span>Sign in (Redirect)</span>
                                 </button>
-                            )}
+                                
+                                <button onClick={loginPopup} className="w-full bg-stone-100 text-stone-600 font-bold py-3 rounded-xl hover:bg-stone-200 transition-colors flex items-center justify-center gap-2 text-sm">
+                                    <span>Trouble? Try Popup Login</span>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        {/* Debug Log Box */}
+                        <div className="mt-8 w-full max-w-sm bg-black/5 p-4 rounded-xl text-[10px] font-mono text-stone-500 overflow-hidden">
+                            <p className="font-bold mb-1">Debug Log (Share if stuck):</p>
+                            {debugLog.length === 0 && <span className="opacity-50">Waiting for events...</span>}
+                            {debugLog.map((l, i) => <div key={i}>{l}</div>)}
                         </div>
                     </div>
                 );
