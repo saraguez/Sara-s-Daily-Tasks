@@ -54,19 +54,19 @@
     <!-- Firebase Imports via Module Script -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        // Switched to signInWithRedirect for better mobile support
-        import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        // Added setPersistence and browserLocalPersistence
+        import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         // --- 🔴 CONFIGURATION SECTION 🔴 ---
         const firebaseConfig = {
-  apiKey: "AIzaSyDNA6RoKmDZKOaFx30k2SrS70EkqVckmvg",
-  authDomain: "sara-s-daily-tasks.firebaseapp.com",
-  projectId: "sara-s-daily-tasks",
-  storageBucket: "sara-s-daily-tasks.firebasestorage.app",
-  messagingSenderId: "431647734098",
-  appId: "1:431647734098:web:cfad56edce7b6d14aa628b"
-};
+            apiKey: "AIzaSyDNA6RoKmDZKOaFx30k2SrS70EkqVckmvg",
+            authDomain: "sara-s-daily-tasks.firebaseapp.com",
+            projectId: "sara-s-daily-tasks",
+            storageBucket: "sara-s-daily-tasks.firebasestorage.app",
+            messagingSenderId: "431647734098",
+            appId: "1:431647734098:web:cfad56edce7b6d14aa628b"
+        };
 
         const app = initializeApp(firebaseConfig.apiKey === "YOUR_API_KEY_HERE" && typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : firebaseConfig);
         const auth = getAuth(app);
@@ -77,13 +77,16 @@
         window.db = db;
         window.auth = auth;
         window.provider = provider;
-        window.signInWithRedirect = signInWithRedirect; // Changed
-        window.getRedirectResult = getRedirectResult;   // Added
+        window.signInWithRedirect = signInWithRedirect;
+        window.getRedirectResult = getRedirectResult;
         window.signOut = signOut;
         window.onAuthStateChanged = onAuthStateChanged;
+        window.setPersistence = setPersistence;
+        window.browserLocalPersistence = browserLocalPersistence;
         window.doc = doc;
         window.onSnapshot = onSnapshot;
         window.setDoc = setDoc;
+        window.updateDoc = updateDoc;
         
         window.dispatchEvent(new Event('firebase-ready'));
     </script>
@@ -166,34 +169,42 @@
             const isScrolling = useRef(false);
 
             useEffect(() => {
-                if (window.onAuthStateChanged) {
-                    window.onAuthStateChanged(window.auth, (currentUser) => {
-                        setUser(currentUser);
-                        if (!currentUser) setLoading(false);
-                    });
-                    
-                    // Check for redirect result on load
-                    window.getRedirectResult(window.auth)
-                        .then((result) => {
-                            if (result) {
-                                console.log("Login successful via redirect");
-                            }
-                        })
-                        .catch((error) => {
+                const initAuth = async () => {
+                    try {
+                        // Ensure session persists even on redirect
+                        if (window.auth && window.setPersistence && window.browserLocalPersistence) {
+                            await window.setPersistence(window.auth, window.browserLocalPersistence);
+                        }
+                    } catch (e) {
+                        console.error("Persistence error", e);
+                    }
+
+                    if (window.onAuthStateChanged) {
+                        window.onAuthStateChanged(window.auth, (currentUser) => {
+                            setUser(currentUser);
+                            setLoading(false); // FIXED: Always stop loading
+                        });
+                        
+                        // Check for redirect errors
+                        window.getRedirectResult(window.auth).catch((error) => {
                             console.error(error);
                             setAuthError(error.message);
+                            setLoading(false);
                         });
-                } else {
-                    const interval = setInterval(() => {
-                        if (window.auth) {
-                            clearInterval(interval);
-                            window.onAuthStateChanged(window.auth, (currentUser) => {
-                                setUser(currentUser);
-                                if (!currentUser) setLoading(false);
-                            });
-                        }
-                    }, 100);
-                }
+                    } else {
+                        // Fallback polling for slow script load
+                        const interval = setInterval(() => {
+                            if (window.auth) {
+                                clearInterval(interval);
+                                window.onAuthStateChanged(window.auth, (currentUser) => {
+                                    setUser(currentUser);
+                                    setLoading(false);
+                                });
+                            }
+                        }, 100);
+                    }
+                };
+                initAuth();
             }, []);
 
             useEffect(() => {
@@ -251,12 +262,13 @@
 
             const login = async () => {
                 setAuthError(null);
+                setLoading(true);
                 try {
-                    // Use Redirect for better Mobile PWA support
                     await window.signInWithRedirect(window.auth, window.provider);
                 } catch (error) {
                     console.error("Login failed", error);
                     setAuthError(error.message);
+                    setLoading(false);
                 }
             };
 
@@ -268,7 +280,6 @@
             const saveTasks = (newTasks) => {
                 if (!user) return;
                 setTasks(newTasks);
-                // setDoc with merge is more robust for sync
                 window.setDoc(window.doc(window.db, 'users', user.uid), { items: newTasks }, { merge: true });
             };
 
@@ -392,11 +403,31 @@
                         <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-sm w-full border border-stone-100">
                             <h1 className="text-4xl font-script text-stone-800 mb-4">Sara's Routine</h1>
                             <p className="text-stone-500 mb-8">Sign in to sync your checklist across all your devices.</p>
-                            {authError && <div className="mb-4 p-3 bg-red-50 text-red-600 text-xs rounded-lg">{authError}</div>}
-                            <button onClick={login} className="w-full bg-[#FF7F50] text-white font-bold py-3 rounded-xl shadow-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2">
-                                <Cloud className="w-5 h-5" />
-                                <span>Sign in with Google</span>
-                            </button>
+                            
+                            {authError && (
+                                <div className="mb-6 p-4 bg-red-50 text-red-600 text-left text-xs rounded-xl border border-red-100">
+                                    <strong className="block mb-1 text-sm">Sign In Failed</strong>
+                                    {authError.includes('unauthorized-domain') ? (
+                                        <span>
+                                            <strong>Action Required:</strong> Google blocked this website.<br/><br/>
+                                            1. Go to console.firebase.google.com<br/>
+                                            2. Go to Authentication &gt; Settings &gt; Authorized Domains<br/>
+                                            3. Add this website address (e.g., github.io)
+                                        </span>
+                                    ) : (
+                                        <span>{authError}</span>
+                                    )}
+                                </div>
+                            )}
+
+                            {loading ? (
+                                <div className="w-full py-3 text-stone-400 font-medium">Connecting...</div>
+                            ) : (
+                                <button onClick={login} className="w-full bg-[#FF7F50] text-white font-bold py-3 rounded-xl shadow-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2">
+                                    <Cloud className="w-5 h-5" />
+                                    <span>Sign in with Google</span>
+                                </button>
+                            )}
                         </div>
                     </div>
                 );
