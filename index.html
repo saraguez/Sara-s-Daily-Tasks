@@ -54,7 +54,6 @@
     <!-- Firebase Imports via Module Script -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        // Added signInWithPopup as fallback
         import { getAuth, signInWithRedirect, signInWithPopup, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { getFirestore, doc, onSnapshot, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
@@ -94,6 +93,19 @@
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
+
+        // --- Utilities ---
+        const log = (msg) => {
+            const timestamp = new Date().toLocaleTimeString();
+            const newLog = `[${timestamp}] ${msg}`;
+            console.log(newLog);
+            try {
+                const existing = JSON.parse(sessionStorage.getItem('auth_debug_logs') || '[]');
+                existing.push(newLog);
+                if (existing.length > 50) existing.shift();
+                sessionStorage.setItem('auth_debug_logs', JSON.stringify(existing));
+            } catch (e) { console.error(e); }
+        };
 
         // --- Icons ---
         const IconWrapper = ({ children, className }) => (
@@ -162,69 +174,34 @@
             const [isInputFocused, setIsInputFocused] = useState(false);
             const [loading, setLoading] = useState(true);
             const [authError, setAuthError] = useState(null);
-            const [debugLog, setDebugLog] = useState([]); // Visual debug log
             
             const [editingId, setEditingId] = useState(null);
             const [editText, setEditText] = useState('');
             const [draggedTaskId, setDraggedTaskId] = useState(null);
             const longPressTimer = useRef(null);
             const isScrolling = useRef(false);
+            const [logs, setLogs] = useState([]);
 
-            // Log helper
-            const log = (msg) => {
-                console.log(msg);
-                setDebugLog(prev => [...prev.slice(-4), msg]); // Keep last 5 logs
-            };
+            const loadLogs = () => { try { setLogs(JSON.parse(sessionStorage.getItem('auth_debug_logs') || '[]')); } catch (e) {} };
 
             useEffect(() => {
+                loadLogs();
                 const initAuth = async () => {
-                    try {
-                        if (window.auth && window.setPersistence && window.browserLocalPersistence) {
-                            await window.setPersistence(window.auth, window.browserLocalPersistence);
-                            log("Persistence set to LOCAL");
-                        }
-                    } catch (e) {
-                        log("Persistence error: " + e.message);
-                    }
-
+                    try { if (window.auth) await window.setPersistence(window.auth, window.browserLocalPersistence); } catch (e) { log(e.message); }
                     if (window.onAuthStateChanged) {
                         window.onAuthStateChanged(window.auth, (currentUser) => {
-                            log(`Auth changed: ${currentUser ? 'User found' : 'No user'}`);
                             setUser(currentUser);
                             setLoading(false);
                         });
-                        
-                        window.getRedirectResult(window.auth)
-                            .then((result) => {
-                                if (result) log("Redirect success!");
-                            })
-                            .catch((error) => {
-                                log("Redirect error: " + error.code);
-                                setAuthError(error.message);
-                                setLoading(false);
-                            });
+                        window.getRedirectResult(window.auth).catch(e => { setAuthError(e.message); setLoading(false); });
                     } else {
-                        // Polling fallback
-                        const interval = setInterval(() => {
-                            if (window.auth) {
-                                clearInterval(interval);
-                                log("Firebase loaded via poll");
-                                window.onAuthStateChanged(window.auth, (currentUser) => {
-                                    setUser(currentUser);
-                                    setLoading(false);
-                                });
-                            }
-                        }, 100);
+                        const interval = setInterval(() => { if (window.auth) { clearInterval(interval); window.onAuthStateChanged(window.auth, (u) => { setUser(u); setLoading(false); }); } }, 100);
                     }
                 };
                 initAuth();
             }, []);
 
-            useEffect(() => {
-                if (activeTab !== 'All') {
-                    setInputCategory(activeTab);
-                }
-            }, [activeTab]);
+            useEffect(() => { if (activeTab !== 'All') setInputCategory(activeTab); }, [activeTab]);
 
             // --- SYNC & RESET LOGIC ---
             useEffect(() => {
@@ -243,67 +220,61 @@
                         if (lastResetDate !== today) {
                             log("New day detected. Resetting.");
                             const defaultIds = new Set(DEFAULT_TASKS.map(d => d.id));
-                            const preservedCustomTasks = loadedTasks.filter(t => 
-                                !defaultIds.has(t.id) && 
-                                (t.type === 'daily' || (t.type === '1to' && !t.completed))
-                            ).map(t => (
-                                t.type === 'daily' ? { ...t, completed: false } : t
-                            ));
+                            const preservedCustomTasks = loadedTasks.filter(t => !defaultIds.has(t.id) && (t.type === 'daily' || (t.type === '1to' && !t.completed))).map(t => (t.type === 'daily' ? { ...t, completed: false } : t));
                             const freshDefaults = DEFAULT_TASKS.map(t => ({...t, completed: false}));
                             const newDayList = [...freshDefaults, ...preservedCustomTasks];
                             
-                            window.setDoc(userDocRef, { 
-                                items: newDayList, 
-                                lastResetDate: today 
-                            }, { merge: true });
+                            window.setDoc(userDocRef, { items: newDayList, lastResetDate: today }, { merge: true });
                         } else {
                             const incomplete = loadedTasks.filter(t => !t.completed);
                             const complete = loadedTasks.filter(t => t.completed);
                             setTasks([...incomplete, ...complete]);
                         }
                     } else {
-                        log("Creating new user doc");
+                        // NEW USER INITIALIZATION
+                        log("Creating new user doc...");
+                        
+                        // 1. Try to recover local data (from previous versions)
+                        let initialTasks = DEFAULT_TASKS;
+                        try {
+                            const local = localStorage.getItem('sara_routine_v2');
+                            if (local) {
+                                const parsed = JSON.parse(local);
+                                if (Array.isArray(parsed) && parsed.length > 0) {
+                                    initialTasks = parsed;
+                                    log("Recovered local data.");
+                                }
+                            }
+                        } catch(e) { log("Local parse error"); }
+
+                        // 2. Optimistic UI
+                        setTasks(initialTasks);
+
+                        // 3. Save to Cloud
                         window.setDoc(userDocRef, { 
-                            items: DEFAULT_TASKS,
+                            items: initialTasks,
                             lastResetDate: today
+                        }).catch(err => {
+                            log("SAVE ERROR: " + err.message);
+                            if (err.code === 'permission-denied') {
+                                setAuthError("⚠️ DATABASE LOCKED: Please go to Firebase Console > Firestore Database > Rules and allow read/write.");
+                            }
                         });
                     }
                     setLoading(false);
                 }, (error) => {
                     log("DB Error: " + error.message);
+                    if (error.code === 'permission-denied') {
+                        setAuthError("⚠️ DATABASE LOCKED: Please go to Firebase Console > Firestore Database > Rules and allow read/write.");
+                    }
                 });
 
                 return () => unsubscribe();
             }, [user]);
 
-            const loginRedirect = async () => {
-                setAuthError(null);
-                setLoading(true);
-                log("Starting Redirect Login...");
-                try {
-                    await window.signInWithRedirect(window.auth, window.provider);
-                } catch (error) {
-                    log("Login error: " + error.code);
-                    setAuthError(error.message);
-                    setLoading(false);
-                }
-            };
-
-            const loginPopup = async () => {
-                setAuthError(null);
-                log("Starting Popup Login...");
-                try {
-                    await window.signInWithPopup(window.auth, window.provider);
-                } catch (error) {
-                    log("Popup error: " + error.code);
-                    setAuthError(error.message);
-                }
-            };
-
-            const logout = () => {
-                window.signOut(window.auth);
-                setTasks([]);
-            };
+            const loginRedirect = async () => { setAuthError(null); setLoading(true); try { await window.signInWithRedirect(window.auth, window.provider); } catch (e) { setAuthError(e.message); setLoading(false); } };
+            const loginPopup = async () => { setAuthError(null); try { await window.signInWithPopup(window.auth, window.provider); } catch (e) { setAuthError(e.message); } };
+            const logout = () => { window.signOut(window.auth); sessionStorage.removeItem('auth_debug_logs'); setTasks([]); };
 
             const saveTasks = (newTasks) => {
                 if (!user) return;
@@ -315,13 +286,7 @@
             const handleAddTask = (e) => {
                 e.preventDefault();
                 if (!newTask.trim()) return;
-                const newTaskItem = {
-                    id: crypto.randomUUID(),
-                    text: newTask.trim(),
-                    completed: false,
-                    category: inputCategory,
-                    type: inputType
-                };
+                const newTaskItem = { id: crypto.randomUUID(), text: newTask.trim(), completed: false, category: inputCategory, type: inputType };
                 const incomplete = tasks.filter(t => !t.completed);
                 const complete = tasks.filter(t => t.completed);
                 saveTasks([...incomplete, newTaskItem, ...complete]);
@@ -335,137 +300,50 @@
                 saveTasks([...incomplete, ...complete]);
             };
 
-            const deleteTask = (taskId) => {
-                const newTasks = tasks.filter(t => t.id !== taskId);
-                saveTasks(newTasks);
-            };
-
+            const deleteTask = (taskId) => { const newTasks = tasks.filter(t => t.id !== taskId); saveTasks(newTasks); };
             const startEditing = (task) => { setEditingId(task.id); setEditText(task.text); };
-            const saveEdit = () => {
-                if (!editText.trim()) { cancelEdit(); return; }
-                const updatedTasks = tasks.map(t => t.id === editingId ? { ...t, text: editText.trim() } : t);
-                saveTasks(updatedTasks);
-                setEditingId(null); setEditText('');
-            };
+            const saveEdit = () => { if (!editText.trim()) { cancelEdit(); return; } const updatedTasks = tasks.map(t => t.id === editingId ? { ...t, text: editText.trim() } : t); saveTasks(updatedTasks); setEditingId(null); setEditText(''); };
             const cancelEdit = () => { setEditingId(null); setEditText(''); };
 
             const clearCompletedInTab = () => {
                 const newTasks = tasks.reduce((acc, task) => {
                     const isVisible = activeTab === 'All' || task.category === activeTab;
                     if (!isVisible) { acc.push(task); return acc; }
-                    if (task.completed) {
-                        if (task.type === 'daily') { acc.push({ ...task, completed: false }); }
-                    } else { acc.push(task); }
+                    if (task.completed) { if (task.type === 'daily') { acc.push({ ...task, completed: false }); } } else { acc.push(task); }
                     return acc;
                 }, []);
                 saveTasks(newTasks);
             };
 
-            // Drag & Drop
-            const handleTouchStart = (e, taskId) => {
-                if (editingId) return;
-                isScrolling.current = false;
-                longPressTimer.current = setTimeout(() => {
-                    if (!isScrolling.current) {
-                        setDraggedTaskId(taskId);
-                        if (navigator.vibrate) navigator.vibrate(50);
-                    }
-                }, 500);
-            };
+            const handleTouchStart = (e, taskId) => { if (editingId) return; isScrolling.current = false; longPressTimer.current = setTimeout(() => { if (!isScrolling.current) { setDraggedTaskId(taskId); if (navigator.vibrate) navigator.vibrate(50); } }, 500); };
+            const handleTouchMove = (e) => { isScrolling.current = true; if (draggedTaskId) { e.preventDefault(); const touch = e.touches[0]; const element = document.elementFromPoint(touch.clientX, touch.clientY); const row = element?.closest('[data-task-id]'); if (row) { const targetId = row.getAttribute('data-task-id'); if (targetId && targetId !== draggedTaskId) { reorderTasks(draggedTaskId, targetId); } } } else { clearTimeout(longPressTimer.current); } };
+            const handleTouchEnd = () => { clearTimeout(longPressTimer.current); setDraggedTaskId(null); isScrolling.current = false; };
+            const reorderTasks = (draggedId, targetId) => { const dragIndex = tasks.findIndex(t => t.id === draggedId); const targetIndex = tasks.findIndex(t => t.id === targetId); if (tasks[dragIndex].completed || tasks[targetIndex].completed) return; const newTasks = [...tasks]; const [draggedItem] = newTasks.splice(dragIndex, 1); newTasks.splice(targetIndex, 0, draggedItem); saveTasks(newTasks); };
 
-            const handleTouchMove = (e) => {
-                isScrolling.current = true;
-                if (draggedTaskId) {
-                    e.preventDefault();
-                    const touch = e.touches[0];
-                    const element = document.elementFromPoint(touch.clientX, touch.clientY);
-                    const row = element?.closest('[data-task-id]');
-                    if (row) {
-                        const targetId = row.getAttribute('data-task-id');
-                        if (targetId && targetId !== draggedTaskId) {
-                            reorderTasks(draggedTaskId, targetId);
-                        }
-                    }
-                } else { clearTimeout(longPressTimer.current); }
-            };
-
-            const handleTouchEnd = () => {
-                clearTimeout(longPressTimer.current);
-                setDraggedTaskId(null);
-                isScrolling.current = false;
-            };
-
-            const reorderTasks = (draggedId, targetId) => {
-                const dragIndex = tasks.findIndex(t => t.id === draggedId);
-                const targetIndex = tasks.findIndex(t => t.id === targetId);
-                if (tasks[dragIndex].completed || tasks[targetIndex].completed) return;
-                const newTasks = [...tasks];
-                const [draggedItem] = newTasks.splice(dragIndex, 1);
-                newTasks.splice(targetIndex, 0, draggedItem);
-                saveTasks(newTasks);
-            };
-
-            // Styles & State
             const filteredTasks = activeTab === 'All' ? tasks : tasks.filter(t => t.category === activeTab);
             const completedCount = filteredTasks.filter(t => t.completed).length;
-            const totalCount = filteredTasks.length;
-            const progress = totalCount === 0 ? 0 : Math.round((completedCount / totalCount) * 100);
+            const progress = filteredTasks.length === 0 ? 0 : Math.round((completedCount / filteredTasks.length) * 100);
             const activeCategory = CATEGORIES.find(c => c.id === activeTab) || CATEGORIES[0];
-            const activeColor = activeCategory.color;
-            const activeBarColor = activeCategory.barColor;
-            const activeBgColor = activeCategory.bgColor;
-            const activeBorderColor = activeCategory.borderColor;
             const getCategoryColor = (cat) => CATEGORIES.find(c => c.id === cat)?.color || 'text-stone-400';
-            const InputIcon = CATEGORIES.find(c => c.id === inputCategory)?.icon || Sun;
             const inputColor = CATEGORIES.find(c => c.id === inputCategory)?.color || 'text-stone-400';
             
             const today = new Date();
             const gregorianDate = today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-            let hebrewDate = '';
-            try { hebrewDate = new Intl.DateTimeFormat('en-US-u-ca-hebrew', { day: 'numeric', month: 'long' }).format(today); } catch (e) {}
+            let hebrewDate = ''; try { hebrewDate = new Intl.DateTimeFormat('en-US-u-ca-hebrew', { day: 'numeric', month: 'long' }).format(today); } catch (e) {}
 
-            // --- RENDER ---
             if (!user) {
                 return (
                     <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8f5f2] p-6">
                         <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-sm w-full border border-stone-100">
                             <h1 className="text-4xl font-script text-stone-800 mb-4">Sara's Routine</h1>
                             <p className="text-stone-500 mb-8">Sign in to sync your checklist.</p>
-                            
-                            {authError && (
-                                <div className="mb-6 p-4 bg-red-50 text-red-600 text-left text-xs rounded-xl border border-red-100 break-words">
-                                    <strong className="block mb-1 text-sm">Sign In Failed</strong>
-                                    {authError.includes('unauthorized-domain') ? (
-                                        <span>
-                                            <strong>DOMAIN ERROR:</strong><br/>
-                                            1. Go to console.firebase.google.com<br/>
-                                            2. Authentication &gt; Settings &gt; Authorized Domains<br/>
-                                            3. Add this site URL exactly as it appears in your browser.
-                                        </span>
-                                    ) : (
-                                        <span>{authError}</span>
-                                    )}
-                                </div>
-                            )}
-
+                            {authError && <div className="mb-6 p-4 bg-red-50 text-red-600 text-left text-xs rounded-xl border border-red-100 break-words">{authError}</div>}
                             <div className="space-y-3">
-                                <button onClick={loginRedirect} className="w-full bg-[#FF7F50] text-white font-bold py-3 rounded-xl shadow-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2">
-                                    <Cloud className="w-5 h-5" />
-                                    <span>Sign in (Redirect)</span>
-                                </button>
-                                
-                                <button onClick={loginPopup} className="w-full bg-stone-100 text-stone-600 font-bold py-3 rounded-xl hover:bg-stone-200 transition-colors flex items-center justify-center gap-2 text-sm">
-                                    <span>Trouble? Try Popup Login</span>
-                                </button>
+                                <button onClick={loginRedirect} className="w-full bg-[#FF7F50] text-white font-bold py-3 rounded-xl shadow-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2"><Cloud className="w-5 h-5" /><span>Sign in (Redirect)</span></button>
+                                <button onClick={loginPopup} className="w-full bg-stone-100 text-stone-600 font-bold py-3 rounded-xl hover:bg-stone-200 transition-colors flex items-center justify-center gap-2 text-sm"><span>Trouble? Try Popup Login</span></button>
                             </div>
                         </div>
-                        
-                        {/* Debug Log Box */}
-                        <div className="mt-8 w-full max-w-sm bg-black/5 p-4 rounded-xl text-[10px] font-mono text-stone-500 overflow-hidden">
-                            <p className="font-bold mb-1">Debug Log (Share if stuck):</p>
-                            {debugLog.length === 0 && <span className="opacity-50">Waiting for events...</span>}
-                            {debugLog.map((l, i) => <div key={i}>{l}</div>)}
-                        </div>
+                        <div className="mt-8 w-full max-w-sm bg-black/5 p-4 rounded-xl text-[10px] font-mono text-stone-500 overflow-hidden text-left"><p className="font-bold mb-1 border-b border-stone-300 pb-1">Hostname: <span className="text-blue-400">{window.location.hostname}</span></p><div className="h-32 overflow-y-auto mt-2 space-y-1">{logs.slice().reverse().map((l, i) => <div key={i} className="whitespace-pre-wrap">{l}</div>)}</div></div>
                     </div>
                 );
             }
@@ -473,96 +351,47 @@
             return (
                 <div className="min-h-screen pb-32" onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
                     <style>{`@import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&display=swap'); .font-script { font-family: 'Dancing Script', cursive; }`}</style>
-
-                    {/* Header */}
                     <header className="bg-white/50 backdrop-blur-xl shadow-sm sticky top-0 z-20 border-b border-stone-200/60 select-none">
                         <div className="max-w-md mx-auto pt-6 pb-2 px-4">
                             <div className="flex justify-between items-end mb-4">
-                                <div>
-                                    <h1 className="text-3xl font-script font-bold text-stone-800 tracking-wide transform translate-y-1">Sara's Daily Routine</h1>
-                                    <p className="text-sm text-stone-500 font-medium flex items-center gap-1.5 mt-2">
-                                        <CalendarIcon className="w-4 h-4" /> <span>{gregorianDate}</span>
-                                        {hebrewDate && <><span className="text-stone-300">•</span><span className="text-stone-500">{hebrewDate}</span></>}
-                                    </p>
-                                </div>
-                                <div className="text-right flex items-center gap-3">
-                                    <div className="text-right">
-                                        <div className="flex items-baseline justify-end gap-1"><span className={`text-3xl font-bold ${activeColor}`}>{progress}%</span></div>
-                                        <p className="text-xs text-stone-400 font-medium uppercase tracking-wide">Done</p>
-                                    </div>
-                                    <button onClick={logout} className="p-2 bg-stone-100 rounded-full text-stone-400 hover:text-rose-500 transition-colors"><LogOut className="w-4 h-4" /></button>
-                                </div>
+                                <div><h1 className="text-3xl font-script font-bold text-stone-800 tracking-wide transform translate-y-1">Sara's Daily Routine</h1><p className="text-sm text-stone-500 font-medium flex items-center gap-1.5 mt-2"><CalendarIcon className="w-4 h-4" /> <span>{gregorianDate}</span>{hebrewDate && <><span className="text-stone-300">•</span><span className="text-stone-500">{hebrewDate}</span></>}</p></div>
+                                <div className="text-right flex items-center gap-3"><div className="text-right"><div className="flex items-baseline justify-end gap-1"><span className={`text-3xl font-bold ${activeCategory.color}`}>{progress}%</span></div><p className="text-xs text-stone-400 font-medium uppercase tracking-wide">Done</p></div><button onClick={logout} className="p-2 bg-stone-100 rounded-full text-stone-400 hover:text-rose-500 transition-colors"><LogOut className="w-4 h-4" /></button></div>
                             </div>
-                            <div className="h-2.5 w-full bg-stone-200/50 rounded-full overflow-hidden mb-2">
-                                <div className={`h-full transition-all duration-700 ease-out rounded-full opacity-90 ${activeBarColor}`} style={{ width: `${progress}%` }} />
-                            </div>
+                            <div className="h-2.5 w-full bg-stone-200/50 rounded-full overflow-hidden mb-2"><div className={`h-full transition-all duration-700 ease-out rounded-full opacity-90 ${activeCategory.barColor}`} style={{ width: `${progress}%` }} /></div>
                         </div>
                         <div className="flex overflow-x-auto no-scrollbar border-t border-stone-100/50 max-w-md mx-auto bg-white/40 backdrop-blur-md">
-                            {CATEGORIES.map((cat) => {
-                                const Icon = cat.icon;
-                                const isActive = activeTab === cat.id;
-                                return (
-                                    <button key={cat.id} onClick={() => setActiveTab(cat.id)} className={`flex-1 py-3 min-w-[70px] relative transition-all duration-300 flex flex-col items-center gap-0.5 ${isActive ? 'text-stone-800 bg-white/80' : 'text-stone-400 hover:text-stone-600 hover:bg-white/40'}`}>
-                                        <Icon className={`w-5 h-5 mb-0.5 transition-colors ${isActive ? cat.color : 'text-stone-300'}`} />
-                                        <span className={`text-xl font-script font-bold ${isActive ? 'opacity-100' : 'opacity-70'}`}>{cat.label}</span>
-                                        {isActive && <div className={`absolute bottom-0 left-0 right-0 h-0.5 ${cat.barColor}`} />}
-                                    </button>
-                                );
-                            })}
+                            {CATEGORIES.map((cat) => (
+                                <button key={cat.id} onClick={() => setActiveTab(cat.id)} className={`flex-1 py-3 min-w-[70px] relative transition-all duration-300 flex flex-col items-center gap-0.5 ${activeTab === cat.id ? 'text-stone-800 bg-white/80' : 'text-stone-400 hover:text-stone-600 hover:bg-white/40'}`}>
+                                    <cat.icon className={`w-5 h-5 mb-0.5 transition-colors ${activeTab === cat.id ? cat.color : 'text-stone-300'}`} />
+                                    <span className={`text-xl font-script font-bold ${activeTab === cat.id ? 'opacity-100' : 'opacity-70'}`}>{cat.label}</span>
+                                    {activeTab === cat.id && <div className={`absolute bottom-0 left-0 right-0 h-0.5 ${cat.barColor}`} />}
+                                </button>
+                            ))}
                         </div>
                     </header>
-
-                    {/* Main List */}
                     <main className="relative max-w-md mx-auto p-4 z-10">
-                        {loading ? <div className="text-center py-12 text-stone-400 animate-pulse bg-white rounded-2xl mt-4 shadow-sm border border-stone-100">Loading...</div> : 
-                        filteredTasks.length === 0 ? <div className="text-center py-20 px-8 bg-white/50 rounded-2xl shadow-sm border border-stone-100"><div className={`inline-flex items-center justify-center w-20 h-20 rounded-full bg-stone-100 mb-6 ${activeColor}`}><CheckCircle2 className="w-10 h-10 opacity-60" /></div><h3 className="text-xl font-bold text-stone-800">No tasks here</h3><p className="text-stone-500 mt-2 leading-relaxed">Add your first task below.</p></div> : 
-                        (
-                            <div className="space-y-3">
-                                {filteredTasks.map((task) => (
-                                    <div key={task.id} data-task-id={task.id} onTouchStart={(e) => !task.completed && handleTouchStart(e, task.id)} className={`task-item group relative flex items-center gap-3 p-4 rounded-xl border ${task.completed ? 'border-transparent shadow-none bg-stone-100/50' : 'bg-white border-stone-100 shadow-sm'} ${draggedTaskId === task.id ? 'is-dragging' : ''}`}>
-                                        <button onClick={() => toggleTask(task.id)} className={`flex-shrink-0 w-6 h-6 rounded-full border flex items-center justify-center transition-all duration-300 ${task.completed ? `${activeBgColor} ${activeBorderColor} text-white scale-100` : `border-stone-300 text-transparent hover:border-stone-400 scale-95 hover:scale-100`}`}><Check className="w-3.5 h-3.5" strokeWidth="3" /></button>
-                                        <div className="flex-1 min-w-0 py-1">
-                                            {editingId === task.id ? (
-                                                <form onSubmit={(e) => { e.preventDefault(); saveEdit(); }} className="flex items-center gap-2">
-                                                    <input type="text" value={editText} onChange={(e) => setEditText(e.target.value)} className="w-full bg-transparent border-b-2 border-stone-400 focus:border-stone-600 outline-none pb-1 text-stone-800 font-medium" autoFocus onBlur={() => {}} />
-                                                    <button type="submit" className="p-1.5 text-emerald-600 bg-emerald-50 rounded-lg hover:bg-emerald-100"><Check className="w-4 h-4" /></button>
-                                                </form>
-                                            ) : (
-                                                <>
-                                                    <div className="flex items-start justify-between gap-2"><p className={`text-base font-medium transition-colors ${task.completed ? 'text-stone-400 line-through' : 'text-stone-700'}`}>{task.text}</p></div>
-                                                    <div className="flex items-center gap-2 mt-1">
-                                                        {activeTab === 'All' && <span className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold ${getCategoryColor(task.category)} opacity-80`}>{task.category}</span>}
-                                                        {task.type === 'daily' ? <span className="inline-flex items-center gap-1 text-[10px] text-stone-400 font-medium bg-stone-50 px-1.5 py-0.5 rounded border border-stone-100"><Repeat className="w-3 h-3" /> Daily</span> : <span className="inline-flex items-center gap-1 text-[10px] text-stone-400 font-medium bg-white px-1.5 py-0.5 rounded border border-stone-100">1x Only</span>}
-                                                    </div>
-                                                </>
-                                            )}
-                                        </div>
-                                        <div className={`flex items-center gap-1 transition-opacity duration-200 ${task.completed ? 'opacity-0' : 'opacity-100'}`}>
-                                            {!editingId && <><button onClick={() => startEditing(task)} className="p-2 text-stone-300 hover:text-stone-500 rounded-lg transition-colors"><Pencil className="w-4 h-4" /></button><button onClick={() => deleteTask(task.id)} className={`p-2 text-stone-300 hover:${activeColor} hover:bg-stone-50 rounded-lg transition-colors`}><Trash2 className="w-4 h-4" /></button></>}
-                                        </div>
-                                    </div>
-                                ))}
-                                {completedCount > 0 && <div className="pt-6 flex justify-center pb-24"><button onClick={clearCompletedInTab} className="flex flex-col items-center gap-1 text-xs font-medium text-stone-400 hover:text-stone-600 bg-white hover:bg-white/80 px-6 py-3 rounded-xl transition-all shadow-sm w-full sm:w-auto border border-stone-100"><span>Reset / Clear Completed Items</span><span className="text-[10px] opacity-70 font-normal">(Resets daily tasks, deletes 1x tasks)</span></button></div>}
+                        {loading ? <div className="text-center py-12 text-stone-400 animate-pulse">Loading...</div> : 
+                        filteredTasks.length === 0 ? <div className="text-center py-20 px-8 bg-white/50 rounded-2xl shadow-sm border border-stone-100"><div className={`inline-flex items-center justify-center w-20 h-20 rounded-full bg-stone-100 mb-6 ${activeCategory.color}`}><CheckCircle2 className="w-10 h-10 opacity-60" /></div><h3 className="text-xl font-bold text-stone-800">No tasks here</h3><p className="text-stone-500 mt-2 leading-relaxed">Add your first task below.</p></div> : 
+                        (<div className="space-y-3">{filteredTasks.map((task) => (
+                            <div key={task.id} data-task-id={task.id} onTouchStart={(e) => !task.completed && handleTouchStart(e, task.id)} className={`task-item group relative flex items-center gap-3 p-4 rounded-xl border ${task.completed ? 'border-transparent shadow-none bg-stone-100/50' : 'bg-white border-stone-100 shadow-sm'} ${draggedTaskId === task.id ? 'is-dragging' : ''}`}>
+                                <button onClick={() => toggleTask(task.id)} className={`flex-shrink-0 w-6 h-6 rounded-full border flex items-center justify-center transition-all duration-300 ${task.completed ? `${activeCategory.bgColor} ${activeCategory.borderColor} text-white scale-100` : `border-stone-300 text-transparent hover:border-stone-400 scale-95 hover:scale-100`}`}><Check className="w-3.5 h-3.5" strokeWidth="3" /></button>
+                                <div className="flex-1 min-w-0 py-1">
+                                    {editingId === task.id ? (
+                                        <form onSubmit={(e) => { e.preventDefault(); saveEdit(); }} className="flex items-center gap-2"><input type="text" value={editText} onChange={(e) => setEditText(e.target.value)} className="w-full bg-transparent border-b-2 border-stone-400 focus:border-stone-600 outline-none pb-1 text-stone-800 font-medium" autoFocus onBlur={() => {}} /><button type="submit" className="p-1.5 text-emerald-600 bg-emerald-50 rounded-lg hover:bg-emerald-100"><Check className="w-4 h-4" /></button></form>
+                                    ) : (
+                                        <><div className="flex items-start justify-between gap-2"><p className={`text-base font-medium transition-colors ${task.completed ? 'text-stone-400 line-through' : 'text-stone-700'}`}>{task.text}</p></div>
+                                        <div className="flex items-center gap-2 mt-1">{activeTab === 'All' && <span className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold ${getCategoryColor(task.category)} opacity-80`}>{task.category}</span>}{task.type === 'daily' ? <span className="inline-flex items-center gap-1 text-[10px] text-stone-400 font-medium bg-stone-50 px-1.5 py-0.5 rounded border border-stone-100"><Repeat className="w-3 h-3" /> Daily</span> : <span className="inline-flex items-center gap-1 text-[10px] text-stone-400 font-medium bg-white px-1.5 py-0.5 rounded border border-stone-100">1x Only</span>}</div></>
+                                    )}
+                                </div>
+                                <div className={`flex items-center gap-1 transition-opacity duration-200 ${task.completed ? 'opacity-0' : 'opacity-100'}`}>{!editingId && <><button onClick={() => startEditing(task)} className="p-2 text-stone-300 hover:text-stone-500 rounded-lg transition-colors"><Pencil className="w-4 h-4" /></button><button onClick={() => deleteTask(task.id)} className={`p-2 text-stone-300 hover:${activeCategory.color} hover:bg-stone-50 rounded-lg transition-colors`}><Trash2 className="w-4 h-4" /></button></>}</div>
                             </div>
-                        )
-                    }
+                        ))}{completedCount > 0 && <div className="pt-6 flex justify-center pb-24"><button onClick={clearCompletedInTab} className="flex flex-col items-center gap-1 text-xs font-medium text-stone-400 hover:text-stone-600 bg-white hover:bg-white/80 px-6 py-3 rounded-xl transition-all shadow-sm w-full sm:w-auto border border-stone-100"><span>Reset / Clear Completed Items</span><span className="text-[10px] opacity-70 font-normal">(Resets daily tasks, deletes 1x tasks)</span></button></div>}</div>)}
                     </main>
-
-                    {/* Sync Status Footer */}
-                    <div className="fixed bottom-0 left-0 right-0 pointer-events-none z-0 pb-1 text-center">
-                        <p className="text-[10px] text-stone-300 font-medium">
-                            {user ? `Synced as ${user.email}` : 'Not Synced'}
-                        </p>
-                    </div>
-
-                    {/* Add Task Input */}
+                    <div className="fixed bottom-0 left-0 right-0 pointer-events-none z-0 pb-1 text-center"><p className="text-[10px] text-stone-300 font-medium">{user ? `Synced as ${user.email}` : 'Not Synced'}</p></div>
                     <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-white/0 via-[#f8f5f2]/80 to-[#f8f5f2] pt-8 pointer-events-none z-30">
                         <div className="max-w-md mx-auto pointer-events-auto">
                             <form onSubmit={handleAddTask} className={`bg-white/80 backdrop-blur-xl rounded-2xl shadow-lg shadow-stone-200/50 border border-stone-100 p-2 flex items-center gap-2 transform transition-all duration-300`}>
-                                <div className="relative group shrink-0">
-                                    <div className={`p-3 rounded-xl bg-stone-50 cursor-pointer hover:bg-stone-100 transition-colors ${inputColor}`}><InputIcon className="w-5 h-5" /></div>
-                                    <select value={inputCategory} onChange={(e) => setInputCategory(e.target.value)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer">{CATEGORIES.filter(c => c.id !== 'All').map(c => (<option key={c.id} value={c.id}>{c.label}</option>))}</select>
-                                </div>
+                                <div className="relative group shrink-0"><div className={`p-3 rounded-xl bg-stone-50 cursor-pointer hover:bg-stone-100 transition-colors ${inputColor}`}><InputIcon className="w-5 h-5" /></div><select value={inputCategory} onChange={(e) => setInputCategory(e.target.value)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer">{CATEGORIES.filter(c => c.id !== 'All').map(c => (<option key={c.id} value={c.id}>{c.label}</option>))}</select></div>
                                 <input type="text" value={newTask} onChange={(e) => setNewTask(e.target.value)} onFocus={() => setIsInputFocused(true)} onBlur={() => setIsInputFocused(false)} placeholder={`Add to ${inputCategory}...`} className="flex-1 bg-transparent py-3 text-stone-700 placeholder:text-stone-400 font-medium focus:outline-none min-w-0" autoComplete="off" />
                                 <button type="button" onClick={() => setInputType(inputType === 'daily' ? '1to' : 'daily')} className={`shrink-0 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors border ${inputType === 'daily' ? 'bg-stone-100 text-stone-600 border-stone-200' : 'bg-white text-stone-400 border-stone-100'}`}>{inputType === 'daily' ? 'Daily' : '1x'}</button>
                                 <button type="submit" disabled={!newTask.trim()} className={`shrink-0 p-3 rounded-xl text-white transition-all shadow-sm ${!newTask.trim() ? 'bg-stone-200 text-stone-400' : inputCategory === 'Morning' ? 'bg-[#FDB813] hover:opacity-90' : inputCategory === 'Workplace' ? 'bg-[#A0785A] hover:opacity-90' : inputCategory === 'Kids' ? 'bg-rose-400 hover:bg-rose-500' : 'bg-[#FF7F50] hover:opacity-90'}`}><Plus className="w-5 h-5" /></button>
