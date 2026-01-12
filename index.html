@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Sara's Routine">
     
-    <!-- CRASH REPORTER (Must be first) -->
+    <!-- CRASH REPORTER -->
     <script>
         window.onerror = function(msg, url, line, col, error) {
             document.getElementById('root').innerHTML = `
@@ -17,7 +17,6 @@
                     <h3 style="margin-top:0">⚠️ Something went wrong</h3>
                     <p><strong>Error:</strong> ${msg}</p>
                     <p><strong>Line:</strong> ${line}</p>
-                    <p style="font-size:12px; margin-top:10px; color:#555;">If this says "Script error", it might be a network issue loading React or Firebase.</p>
                     <button onclick="window.location.reload()" style="padding:10px 20px; background:#fff; border:1px solid #721c24; margin-top:20px; border-radius:8px;">Reload App</button>
                 </div>
             `;
@@ -88,12 +87,11 @@
         };
 
         try {
-            const app = initializeApp(firebaseConfig.apiKey === "AIzaSyDNA6RoKmDZKOaFx30k2SrS70EkqVckmvg" && typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : firebaseConfig);
+            const app = initializeApp(firebaseConfig.apiKey === "YOUR_API_KEY_HERE" && typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : firebaseConfig);
             const auth = getAuth(app);
             const db = getFirestore(app);
             const provider = new GoogleAuthProvider();
 
-            // Expose to window for React
             window.db = db;
             window.auth = auth;
             window.provider = provider;
@@ -112,7 +110,7 @@
             window.dispatchEvent(new Event('firebase-ready'));
         } catch(e) {
             console.error("Firebase Init Error:", e);
-            document.getElementById('root').innerHTML = `<div style="padding:20px; color:red;">Firebase Init Failed: ${e.message}. Check your config.</div>`;
+            document.getElementById('root').innerHTML = `<div style="padding:20px; color:red;">Firebase Init Failed: ${e.message}</div>`;
         }
     </script>
 
@@ -122,22 +120,17 @@
         // --- Utilities ---
         const log = (msg) => {
             const timestamp = new Date().toLocaleTimeString();
-            const newLog = `[${timestamp}] ${msg}`;
-            console.log(newLog);
+            console.log(`[${timestamp}] ${msg}`);
             try {
                 const existing = JSON.parse(sessionStorage.getItem('auth_debug_logs') || '[]');
-                existing.push(newLog);
+                existing.push(`[${timestamp}] ${msg}`);
                 if (existing.length > 50) existing.shift();
                 sessionStorage.setItem('auth_debug_logs', JSON.stringify(existing));
-            } catch (e) { console.error(e); }
+            } catch (e) {}
         };
 
         // --- Icons ---
-        const IconWrapper = ({ children, className }) => (
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-                {children}
-            </svg>
-        );
+        const IconWrapper = ({ children, className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{children}</svg>;
         const Plus = ({ className }) => <IconWrapper className={className}><path d="M5 12h14"/><path d="M12 5v14"/></IconWrapper>;
         const Trash2 = ({ className }) => <IconWrapper className={className}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></IconWrapper>;
         const Pencil = ({ className }) => <IconWrapper className={className}><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></IconWrapper>;
@@ -199,13 +192,12 @@
             const [isInputFocused, setIsInputFocused] = useState(false);
             const [loading, setLoading] = useState(true);
             const [authError, setAuthError] = useState(null);
-            
+            const [logs, setLogs] = useState([]);
             const [editingId, setEditingId] = useState(null);
             const [editText, setEditText] = useState('');
             const [draggedTaskId, setDraggedTaskId] = useState(null);
             const longPressTimer = useRef(null);
             const isScrolling = useRef(false);
-            const [logs, setLogs] = useState([]);
 
             const loadLogs = () => { try { setLogs(JSON.parse(sessionStorage.getItem('auth_debug_logs') || '[]')); } catch (e) {} };
 
@@ -228,109 +220,47 @@
 
             useEffect(() => { if (activeTab !== 'All') setInputCategory(activeTab); }, [activeTab]);
 
-            // --- SYNC & RESET LOGIC ---
             useEffect(() => {
                 if (!user) return;
-
                 const userDocRef = window.doc(window.db, 'users', user.uid);
-                
                 const unsubscribe = window.onSnapshot(userDocRef, (docSnap) => {
                     const today = new Date().toDateString();
-                    
                     if (docSnap.exists()) {
                         const data = docSnap.data();
                         let loadedTasks = data.items || [];
                         const lastResetDate = data.lastResetDate;
-
                         if (lastResetDate !== today) {
                             log("New day detected. Resetting.");
                             const defaultIds = new Set(DEFAULT_TASKS.map(d => d.id));
                             const preservedCustomTasks = loadedTasks.filter(t => !defaultIds.has(t.id) && (t.type === 'daily' || (t.type === '1to' && !t.completed))).map(t => (t.type === 'daily' ? { ...t, completed: false } : t));
                             const freshDefaults = DEFAULT_TASKS.map(t => ({...t, completed: false}));
-                            const newDayList = [...freshDefaults, ...preservedCustomTasks];
-                            
-                            window.setDoc(userDocRef, { items: newDayList, lastResetDate: today }, { merge: true });
+                            window.setDoc(userDocRef, { items: [...freshDefaults, ...preservedCustomTasks], lastResetDate: today }, { merge: true });
                         } else {
                             const incomplete = loadedTasks.filter(t => !t.completed);
                             const complete = loadedTasks.filter(t => t.completed);
                             setTasks([...incomplete, ...complete]);
                         }
                     } else {
-                        log("Creating new user doc...");
-                        // Try to recover local data
                         let initialTasks = DEFAULT_TASKS;
-                        try {
-                            const local = localStorage.getItem('sara_routine_v2');
-                            if (local) {
-                                const parsed = JSON.parse(local);
-                                if (Array.isArray(parsed) && parsed.length > 0) initialTasks = parsed;
-                            }
-                        } catch(e) {}
-
-                        window.setDoc(userDocRef, { 
-                            items: initialTasks,
-                            lastResetDate: today
-                        }).catch(err => {
-                            log("SAVE ERROR: " + err.message);
-                            if (err.code === 'permission-denied') {
-                                setAuthError("⚠️ DATABASE LOCKED: Please go to Firebase Console > Firestore Database > Rules and allow read/write.");
-                            }
-                        });
+                        try { const local = localStorage.getItem('sara_routine_v2'); if (local) { const parsed = JSON.parse(local); if (Array.isArray(parsed) && parsed.length > 0) initialTasks = parsed; } } catch(e) {}
+                        window.setDoc(userDocRef, { items: initialTasks, lastResetDate: today }).catch(err => { if (err.code === 'permission-denied') setAuthError("⚠️ DATABASE LOCKED: Go to Firebase Console > Firestore Database > Rules and change 'allow read, write: if false;' to 'if request.auth != null;'"); });
                     }
                     setLoading(false);
-                }, (error) => {
-                    log("DB Error: " + error.message);
-                    if (error.code === 'permission-denied') {
-                        setAuthError("⚠️ DATABASE LOCKED: Please go to Firebase Console > Firestore Database > Rules and allow read/write.");
-                    }
-                });
-
+                }, (error) => { if (error.code === 'permission-denied') setAuthError("⚠️ DATABASE LOCKED: Go to Firebase Console > Firestore Database > Rules and change 'allow read, write: if false;' to 'if request.auth != null;'"); });
                 return () => unsubscribe();
             }, [user]);
 
             const loginRedirect = async () => { setAuthError(null); setLoading(true); try { await window.signInWithRedirect(window.auth, window.provider); } catch (e) { setAuthError(e.message); setLoading(false); } };
             const loginPopup = async () => { setAuthError(null); try { await window.signInWithPopup(window.auth, window.provider); } catch (e) { setAuthError(e.message); } };
             const logout = () => { window.signOut(window.auth); sessionStorage.removeItem('auth_debug_logs'); setTasks([]); };
-
-            const saveTasks = (newTasks) => {
-                if (!user) return;
-                setTasks(newTasks);
-                window.setDoc(window.doc(window.db, 'users', user.uid), { items: newTasks }, { merge: true });
-            };
-
-            // --- Handlers ---
-            const handleAddTask = (e) => {
-                e.preventDefault();
-                if (!newTask.trim()) return;
-                const newTaskItem = { id: crypto.randomUUID(), text: newTask.trim(), completed: false, category: inputCategory, type: inputType };
-                const incomplete = tasks.filter(t => !t.completed);
-                const complete = tasks.filter(t => t.completed);
-                saveTasks([...incomplete, newTaskItem, ...complete]);
-                setNewTask('');
-            };
-
-            const toggleTask = (taskId) => {
-                const updatedTasks = tasks.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t);
-                const incomplete = updatedTasks.filter(t => !t.completed);
-                const complete = updatedTasks.filter(t => t.completed);
-                saveTasks([...incomplete, ...complete]);
-            };
-
+            const saveTasks = (newTasks) => { if (!user) return; setTasks(newTasks); window.setDoc(window.doc(window.db, 'users', user.uid), { items: newTasks }, { merge: true }); };
+            const handleAddTask = (e) => { e.preventDefault(); if (!newTask.trim()) return; const newTaskItem = { id: crypto.randomUUID(), text: newTask.trim(), completed: false, category: inputCategory, type: inputType }; const incomplete = tasks.filter(t => !t.completed); const complete = tasks.filter(t => t.completed); saveTasks([...incomplete, newTaskItem, ...complete]); setNewTask(''); };
+            const toggleTask = (taskId) => { const updatedTasks = tasks.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t); const incomplete = updatedTasks.filter(t => !t.completed); const complete = updatedTasks.filter(t => t.completed); saveTasks([...incomplete, ...complete]); };
             const deleteTask = (taskId) => { const newTasks = tasks.filter(t => t.id !== taskId); saveTasks(newTasks); };
             const startEditing = (task) => { setEditingId(task.id); setEditText(task.text); };
             const saveEdit = () => { if (!editText.trim()) { cancelEdit(); return; } const updatedTasks = tasks.map(t => t.id === editingId ? { ...t, text: editText.trim() } : t); saveTasks(updatedTasks); setEditingId(null); setEditText(''); };
             const cancelEdit = () => { setEditingId(null); setEditText(''); };
-
-            const clearCompletedInTab = () => {
-                const newTasks = tasks.reduce((acc, task) => {
-                    const isVisible = activeTab === 'All' || task.category === activeTab;
-                    if (!isVisible) { acc.push(task); return acc; }
-                    if (task.completed) { if (task.type === 'daily') { acc.push({ ...task, completed: false }); } } else { acc.push(task); }
-                    return acc;
-                }, []);
-                saveTasks(newTasks);
-            };
-
+            const clearCompletedInTab = () => { const newTasks = tasks.reduce((acc, task) => { const isVisible = activeTab === 'All' || task.category === activeTab; if (!isVisible) { acc.push(task); return acc; } if (task.completed) { if (task.type === 'daily') { acc.push({ ...task, completed: false }); } } else { acc.push(task); } return acc; }, []); saveTasks(newTasks); };
             const handleTouchStart = (e, taskId) => { if (editingId) return; isScrolling.current = false; longPressTimer.current = setTimeout(() => { if (!isScrolling.current) { setDraggedTaskId(taskId); if (navigator.vibrate) navigator.vibrate(50); } }, 500); };
             const handleTouchMove = (e) => { isScrolling.current = true; if (draggedTaskId) { e.preventDefault(); const touch = e.touches[0]; const element = document.elementFromPoint(touch.clientX, touch.clientY); const row = element?.closest('[data-task-id]'); if (row) { const targetId = row.getAttribute('data-task-id'); if (targetId && targetId !== draggedTaskId) { reorderTasks(draggedTaskId, targetId); } } } else { clearTimeout(longPressTimer.current); } };
             const handleTouchEnd = () => { clearTimeout(longPressTimer.current); setDraggedTaskId(null); isScrolling.current = false; };
@@ -343,6 +273,13 @@
             const getCategoryColor = (cat) => CATEGORIES.find(c => c.id === cat)?.color || 'text-stone-400';
             const inputColor = CATEGORIES.find(c => c.id === inputCategory)?.color || 'text-stone-400';
             
+            // --- FIX FOR REFERENCE ERROR: Helper function instead of Component Variable ---
+            const getCurrentIcon = () => {
+                const found = CATEGORIES.find(c => c.id === inputCategory);
+                return found ? found.icon : Sun;
+            };
+            const InputIconComponent = getCurrentIcon();
+
             const today = new Date();
             const gregorianDate = today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
             let hebrewDate = ''; try { hebrewDate = new Intl.DateTimeFormat('en-US-u-ca-hebrew', { day: 'numeric', month: 'long' }).format(today); } catch (e) {}
@@ -407,7 +344,7 @@
                     <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-white/0 via-[#f8f5f2]/80 to-[#f8f5f2] pt-8 pointer-events-none z-30">
                         <div className="max-w-md mx-auto pointer-events-auto">
                             <form onSubmit={handleAddTask} className={`bg-white/80 backdrop-blur-xl rounded-2xl shadow-lg shadow-stone-200/50 border border-stone-100 p-2 flex items-center gap-2 transform transition-all duration-300`}>
-                                <div className="relative group shrink-0"><div className={`p-3 rounded-xl bg-stone-50 cursor-pointer hover:bg-stone-100 transition-colors ${inputColor}`}><InputIcon className="w-5 h-5" /></div><select value={inputCategory} onChange={(e) => setInputCategory(e.target.value)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer">{CATEGORIES.filter(c => c.id !== 'All').map(c => (<option key={c.id} value={c.id}>{c.label}</option>))}</select></div>
+                                <div className="relative group shrink-0"><div className={`p-3 rounded-xl bg-stone-50 cursor-pointer hover:bg-stone-100 transition-colors ${inputColor}`}><InputIconComponent className="w-5 h-5" /></div><select value={inputCategory} onChange={(e) => setInputCategory(e.target.value)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer">{CATEGORIES.filter(c => c.id !== 'All').map(c => (<option key={c.id} value={c.id}>{c.label}</option>))}</select></div>
                                 <input type="text" value={newTask} onChange={(e) => setNewTask(e.target.value)} onFocus={() => setIsInputFocused(true)} onBlur={() => setIsInputFocused(false)} placeholder={`Add to ${inputCategory}...`} className="flex-1 bg-transparent py-3 text-stone-700 placeholder:text-stone-400 font-medium focus:outline-none min-w-0" autoComplete="off" />
                                 <button type="button" onClick={() => setInputType(inputType === 'daily' ? '1to' : 'daily')} className={`shrink-0 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors border ${inputType === 'daily' ? 'bg-stone-100 text-stone-600 border-stone-200' : 'bg-white text-stone-400 border-stone-100'}`}>{inputType === 'daily' ? 'Daily' : '1x'}</button>
                                 <button type="submit" disabled={!newTask.trim()} className={`shrink-0 p-3 rounded-xl text-white transition-all shadow-sm ${!newTask.trim() ? 'bg-stone-200 text-stone-400' : inputCategory === 'Morning' ? 'bg-[#FDB813] hover:opacity-90' : inputCategory === 'Workplace' ? 'bg-[#A0785A] hover:opacity-90' : inputCategory === 'Kids' ? 'bg-rose-400 hover:bg-rose-500' : 'bg-[#FF7F50] hover:opacity-90'}`}><Plus className="w-5 h-5" /></button>
