@@ -9,21 +9,6 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Sara's Routine">
     
-    <!-- CRASH REPORTER -->
-    <script>
-        window.onerror = function(msg, url, line, col, error) {
-            document.getElementById('root').innerHTML = `
-                <div style="padding:20px; font-family:sans-serif; color:#721c24; background:#f8d7da; height:100vh;">
-                    <h3 style="margin-top:0">⚠️ Something went wrong</h3>
-                    <p><strong>Error:</strong> ${msg}</p>
-                    <p><strong>Line:</strong> ${line}</p>
-                    <button onclick="window.location.reload()" style="padding:10px 20px; background:#fff; border:1px solid #721c24; margin-top:20px; border-radius:8px;">Reload App</button>
-                </div>
-            `;
-            return false;
-        };
-    </script>
-
     <!-- APP ICON -->
     <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512' style='background-color:%23FF7F50'%3E%3Crect width='512' height='512' fill='%23FF7F50'/%3E%3Cpath d='M368 128h-16l-48-64c-8.8-11.8-22.8-18.7-37.7-18.7H245.7c-14.9 0-28.9 6.9-37.7 18.7l-48 64h-16c-26.5 0-48 21.5-48 48v224c0 26.5 21.5 48 48 48h224c26.5 0 48-21.5 48-48V176c0-26.5-21.5-48-48-48z' fill='white'/%3E%3Cpath d='M343.3 228.7c6.2-6.2 16.4-6.2 22.6 0s6.2 16.4 0 22.6l-112 112c-6.2 6.2-16.4 6.2-22.6 0l-48-48c-6.2-6.2-6.2-16.4 0-22.6s16.4-6.2 22.6 0l36.7 36.7 100.7-100.7z' fill='%23FF7F50'/%3E%3C/svg%3E">
     <link rel="icon" type="image/x-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512' style='background-color:%23FF7F50'%3E%3Crect width='512' height='512' fill='%23FF7F50'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='300' fill='white'%3E%E2%9C%93%3C/text%3E%3C/svg%3E">
@@ -192,27 +177,25 @@
             const [isInputFocused, setIsInputFocused] = useState(false);
             const [loading, setLoading] = useState(true);
             const [authError, setAuthError] = useState(null);
-            const [logs, setLogs] = useState([]);
+            const [syncStatus, setSyncStatus] = useState('Checking...');
+            
             const [editingId, setEditingId] = useState(null);
             const [editText, setEditText] = useState('');
             const [draggedTaskId, setDraggedTaskId] = useState(null);
             const longPressTimer = useRef(null);
             const isScrolling = useRef(false);
 
-            const loadLogs = () => { try { setLogs(JSON.parse(sessionStorage.getItem('auth_debug_logs') || '[]')); } catch (e) {} };
-
             useEffect(() => {
-                loadLogs();
                 const initAuth = async () => {
-                    try { if (window.auth) await window.setPersistence(window.auth, window.browserLocalPersistence); } catch (e) { log(e.message); }
+                    try { if (window.auth) await window.setPersistence(window.auth, window.browserLocalPersistence); } catch (e) { console.error(e); }
                     if (window.onAuthStateChanged) {
                         window.onAuthStateChanged(window.auth, (currentUser) => {
                             setUser(currentUser);
-                            setLoading(false);
+                            if (!currentUser) setLoading(false);
                         });
                         window.getRedirectResult(window.auth).catch(e => { setAuthError(e.message); setLoading(false); });
                     } else {
-                        const interval = setInterval(() => { if (window.auth) { clearInterval(interval); window.onAuthStateChanged(window.auth, (u) => { setUser(u); setLoading(false); }); } }, 100);
+                        const interval = setInterval(() => { if (window.auth) { clearInterval(interval); window.onAuthStateChanged(window.auth, (u) => { setUser(u); if(!u) setLoading(false); }); } }, 100);
                     }
                 };
                 initAuth();
@@ -222,15 +205,20 @@
 
             useEffect(() => {
                 if (!user) return;
+                setSyncStatus('Syncing...');
                 const userDocRef = window.doc(window.db, 'users', user.uid);
+                
                 const unsubscribe = window.onSnapshot(userDocRef, (docSnap) => {
                     const today = new Date().toDateString();
+                    setSyncStatus('Synced');
+                    
                     if (docSnap.exists()) {
                         const data = docSnap.data();
                         let loadedTasks = data.items || [];
                         const lastResetDate = data.lastResetDate;
+
                         if (lastResetDate !== today) {
-                            log("New day detected. Resetting.");
+                            console.log("New day detected. Resetting.");
                             const defaultIds = new Set(DEFAULT_TASKS.map(d => d.id));
                             const preservedCustomTasks = loadedTasks.filter(t => !defaultIds.has(t.id) && (t.type === 'daily' || (t.type === '1to' && !t.completed))).map(t => (t.type === 'daily' ? { ...t, completed: false } : t));
                             const freshDefaults = DEFAULT_TASKS.map(t => ({...t, completed: false}));
@@ -241,19 +229,35 @@
                             setTasks([...incomplete, ...complete]);
                         }
                     } else {
+                        // NEW USER or FRESH START
                         let initialTasks = DEFAULT_TASKS;
                         try { const local = localStorage.getItem('sara_routine_v2'); if (local) { const parsed = JSON.parse(local); if (Array.isArray(parsed) && parsed.length > 0) initialTasks = parsed; } } catch(e) {}
-                        window.setDoc(userDocRef, { items: initialTasks, lastResetDate: today }).catch(err => { if (err.code === 'permission-denied') setAuthError("⚠️ DATABASE LOCKED: Go to Firebase Console > Firestore Database > Rules and change 'allow read, write: if false;' to 'if request.auth != null;'"); });
+                        window.setDoc(userDocRef, { items: initialTasks, lastResetDate: today }).catch(err => { 
+                            setSyncStatus('⚠️ Save Failed'); 
+                            if (err.code === 'permission-denied') setAuthError("DATABASE LOCKED: Please fix Firestore Rules in Console."); 
+                        });
                     }
                     setLoading(false);
-                }, (error) => { if (error.code === 'permission-denied') setAuthError("⚠️ DATABASE LOCKED: Go to Firebase Console > Firestore Database > Rules and change 'allow read, write: if false;' to 'if request.auth != null;'"); });
+                }, (error) => { 
+                    setSyncStatus('⚠️ Error'); 
+                    if (error.code === 'permission-denied') setAuthError("DATABASE LOCKED: Go to Firebase Console > Firestore > Rules and change to 'allow read, write: if request.auth != null;'"); 
+                });
                 return () => unsubscribe();
             }, [user]);
 
             const loginRedirect = async () => { setAuthError(null); setLoading(true); try { await window.signInWithRedirect(window.auth, window.provider); } catch (e) { setAuthError(e.message); setLoading(false); } };
             const loginPopup = async () => { setAuthError(null); try { await window.signInWithPopup(window.auth, window.provider); } catch (e) { setAuthError(e.message); } };
-            const logout = () => { window.signOut(window.auth); sessionStorage.removeItem('auth_debug_logs'); setTasks([]); };
-            const saveTasks = (newTasks) => { if (!user) return; setTasks(newTasks); window.setDoc(window.doc(window.db, 'users', user.uid), { items: newTasks }, { merge: true }); };
+            const logout = () => { window.signOut(window.auth); setTasks([]); setAuthError(null); };
+
+            const saveTasks = (newTasks) => { 
+                if (!user) return; 
+                setTasks(newTasks); // Optimistic
+                setSyncStatus('Saving...');
+                window.setDoc(window.doc(window.db, 'users', user.uid), { items: newTasks }, { merge: true })
+                    .then(() => setSyncStatus('Synced'))
+                    .catch(e => { setSyncStatus('⚠️ Save Failed'); setAuthError("Save Error: " + e.message); });
+            };
+
             const handleAddTask = (e) => { e.preventDefault(); if (!newTask.trim()) return; const newTaskItem = { id: crypto.randomUUID(), text: newTask.trim(), completed: false, category: inputCategory, type: inputType }; const incomplete = tasks.filter(t => !t.completed); const complete = tasks.filter(t => t.completed); saveTasks([...incomplete, newTaskItem, ...complete]); setNewTask(''); };
             const toggleTask = (taskId) => { const updatedTasks = tasks.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t); const incomplete = updatedTasks.filter(t => !t.completed); const complete = updatedTasks.filter(t => t.completed); saveTasks([...incomplete, ...complete]); };
             const deleteTask = (taskId) => { const newTasks = tasks.filter(t => t.id !== taskId); saveTasks(newTasks); };
@@ -272,14 +276,8 @@
             const activeCategory = CATEGORIES.find(c => c.id === activeTab) || CATEGORIES[0];
             const getCategoryColor = (cat) => CATEGORIES.find(c => c.id === cat)?.color || 'text-stone-400';
             const inputColor = CATEGORIES.find(c => c.id === inputCategory)?.color || 'text-stone-400';
-            
-            // --- FIX FOR REFERENCE ERROR: Helper function instead of Component Variable ---
-            const getCurrentIcon = () => {
-                const found = CATEGORIES.find(c => c.id === inputCategory);
-                return found ? found.icon : Sun;
-            };
+            const getCurrentIcon = () => CATEGORIES.find(c => c.id === inputCategory)?.icon || Sun;
             const InputIconComponent = getCurrentIcon();
-
             const today = new Date();
             const gregorianDate = today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
             let hebrewDate = ''; try { hebrewDate = new Intl.DateTimeFormat('en-US-u-ca-hebrew', { day: 'numeric', month: 'long' }).format(today); } catch (e) {}
@@ -290,13 +288,12 @@
                         <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-sm w-full border border-stone-100">
                             <h1 className="text-4xl font-script text-stone-800 mb-4">Sara's Routine</h1>
                             <p className="text-stone-500 mb-8">Sign in to sync your checklist.</p>
-                            {authError && <div className="mb-6 p-4 bg-red-50 text-red-600 text-left text-xs rounded-xl border border-red-100 break-words">{authError}</div>}
+                            {authError && <div className="mb-6 p-4 bg-red-50 text-red-600 text-left text-xs rounded-xl border border-red-100 break-words"><strong>ERROR:</strong> {authError}</div>}
                             <div className="space-y-3">
                                 <button onClick={loginRedirect} className="w-full bg-[#FF7F50] text-white font-bold py-3 rounded-xl shadow-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2"><Cloud className="w-5 h-5" /><span>Sign in (Redirect)</span></button>
                                 <button onClick={loginPopup} className="w-full bg-stone-100 text-stone-600 font-bold py-3 rounded-xl hover:bg-stone-200 transition-colors flex items-center justify-center gap-2 text-sm"><span>Trouble? Try Popup Login</span></button>
                             </div>
                         </div>
-                        <div className="mt-8 w-full max-w-sm bg-black/5 p-4 rounded-xl text-[10px] font-mono text-stone-500 overflow-hidden text-left"><p className="font-bold mb-1 border-b border-stone-300 pb-1">Hostname: <span className="text-blue-400">{window.location.hostname}</span></p><div className="h-32 overflow-y-auto mt-2 space-y-1">{logs.slice().reverse().map((l, i) => <div key={i} className="whitespace-pre-wrap">{l}</div>)}</div></div>
                     </div>
                 );
             }
@@ -340,7 +337,7 @@
                             </div>
                         ))}{completedCount > 0 && <div className="pt-6 flex justify-center pb-24"><button onClick={clearCompletedInTab} className="flex flex-col items-center gap-1 text-xs font-medium text-stone-400 hover:text-stone-600 bg-white hover:bg-white/80 px-6 py-3 rounded-xl transition-all shadow-sm w-full sm:w-auto border border-stone-100"><span>Reset / Clear Completed Items</span><span className="text-[10px] opacity-70 font-normal">(Resets daily tasks, deletes 1x tasks)</span></button></div>}</div>)}
                     </main>
-                    <div className="fixed bottom-0 left-0 right-0 pointer-events-none z-0 pb-1 text-center"><p className="text-[10px] text-stone-300 font-medium">{user ? `Synced as ${user.email}` : 'Not Synced'}</p></div>
+                    <div className={`fixed bottom-0 left-0 right-0 pointer-events-none z-0 pb-1 text-center text-[10px] font-bold ${syncStatus.includes('Error') || syncStatus.includes('Failed') ? 'text-red-500' : 'text-stone-300'}`}>{syncStatus}</div>
                     <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-white/0 via-[#f8f5f2]/80 to-[#f8f5f2] pt-8 pointer-events-none z-30">
                         <div className="max-w-md mx-auto pointer-events-auto">
                             <form onSubmit={handleAddTask} className={`bg-white/80 backdrop-blur-xl rounded-2xl shadow-lg shadow-stone-200/50 border border-stone-100 p-2 flex items-center gap-2 transform transition-all duration-300`}>
