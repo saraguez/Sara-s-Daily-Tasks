@@ -1,1 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <!-- iOS Web App Config -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Sara's Routine">
+    
+    <!-- APP ICON -->
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512' style='background-color:%23FF7F50'%3E%3Crect width='512' height='512' fill='%23FF7F50'/%3E%3Cpath d='M368 128h-16l-48-64c-8.8-11.8-22.8-18.7-37.7-18.7H245.7c-14.9 0-28.9 6.9-37.7 18.7l-48 64h-16c-26.5 0-48 21.5-48 48v224c0 26.5 21.5 48 48 48h224c26.5 0 48-21.5 48-48V176c0-26.5-21.5-48-48-48z' fill='white'/%3E%3Cpath d='M343.3 228.7c6.2-6.2 16.4-6.2 22.6 0s6.2 16.4 0 22.6l-112 112c-6.2 6.2-16.4 6.2-22.6 0l-48-48c-6.2-6.2-6.2-16.4 0-22.6s16.4-6.2 22.6 0l36.7 36.7 100.7-100.7z' fill='%23FF7F50'/%3E%3C/svg%3E">
+    <link rel="icon" type="image/x-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512' style='background-color:%23FF7F50'%3E%3Crect width='512' height='512' fill='%23FF7F50'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='300' fill='white'%3E%E2%9C%93%3C/text%3E%3C/svg%3E">
 
+    <title>Sara's Daily Routine</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&display=swap" rel="stylesheet">
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body {
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f8f5f2;
+            -webkit-tap-highlight-color: transparent;
+            overscroll-behavior-y: none;
+        }
+        .font-script { font-family: 'Dancing Script', cursive; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        button:active { transform: scale(0.95); }
+        .task-item { transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s; }
+        .is-dragging { 
+            z-index: 50; 
+            transform: scale(1.02); 
+            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div id="root">
+        <div style="display:flex; justify-content:center; align-items:center; height:100vh; color:#999; font-family:sans-serif;">
+            Starting App...
+        </div>
+    </div>
+
+    <!-- Firebase Imports via Module Script -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInWithRedirect, signInWithPopup, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // --- 🔴 CONFIGURATION SECTION 🔴 ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyDNA6RoKmDZKOaFx30k2SrS70EkqVckmvg",
+            authDomain: "sara-s-daily-tasks.firebaseapp.com",
+            projectId: "sara-s-daily-tasks",
+            storageBucket: "sara-s-daily-tasks.firebasestorage.app",
+            messagingSenderId: "431647734098",
+            appId: "1:431647734098:web:cfad56edce7b6d14aa628b"
+        };
+
+        try {
+            const app = initializeApp(firebaseConfig.apiKey === "YOUR_API_KEY_HERE" && typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : firebaseConfig);
+            const auth = getAuth(app);
+            const db = getFirestore(app);
+            const provider = new GoogleAuthProvider();
+
+            window.db = db;
+            window.auth = auth;
+            window.provider = provider;
+            window.signInWithRedirect = signInWithRedirect;
+            window.signInWithPopup = signInWithPopup;
+            window.getRedirectResult = getRedirectResult;
+            window.signOut = signOut;
+            window.onAuthStateChanged = onAuthStateChanged;
+            window.setPersistence = setPersistence;
+            window.browserLocalPersistence = browserLocalPersistence;
+            window.doc = doc;
+            window.onSnapshot = onSnapshot;
+            window.setDoc = setDoc;
+            window.updateDoc = updateDoc;
+            
+            window.dispatchEvent(new Event('firebase-ready'));
+        } catch(e) {
+            console.error("Firebase Init Error:", e);
+            document.getElementById('root').innerHTML = `<div style="padding:20px; color:red;">Firebase Init Failed: ${e.message}</div>`;
+        }
+    </script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- Utilities ---
+        const log = (msg) => {
+            const timestamp = new Date().toLocaleTimeString();
+            console.log(`[${timestamp}] ${msg}`);
+            try {
+                const existing = JSON.parse(sessionStorage.getItem('auth_debug_logs') || '[]');
+                existing.push(`[${timestamp}] ${msg}`);
+                if (existing.length > 50) existing.shift();
+                sessionStorage.setItem('auth_debug_logs', JSON.stringify(existing));
+            } catch (e) {}
+        };
+
+        // --- Icons ---
+        const IconWrapper = ({ children, className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{children}</svg>;
+        const Plus = ({ className }) => <IconWrapper className={className}><path d="M5 12h14"/><path d="M12 5v14"/></IconWrapper>;
+        const Trash2 = ({ className }) => <IconWrapper className={className}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></IconWrapper>;
+        const Pencil = ({ className }) => <IconWrapper className={className}><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></IconWrapper>;
+        const Check = ({ className }) => <IconWrapper className={className}><polyline points="20 6 9 17 4 12"/></IconWrapper>;
+        const Coffee = ({ className }) => <IconWrapper className={className}><path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><line x1="6" x2="6" y1="2" y2="4"/><line x1="10" x2="10" y1="2" y2="4"/><line x1="14" x2="14" y1="2" y2="4"/></IconWrapper>;
+        const Users = ({ className }) => <IconWrapper className={className}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></IconWrapper>;
+        const Moon = ({ className }) => <IconWrapper className={className}><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></IconWrapper>;
+        const Sun = ({ className }) => <IconWrapper className={className}><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></IconWrapper>;
+        const CalendarIcon = ({ className }) => <IconWrapper className={className}><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></IconWrapper>;
+        const LayoutGrid = ({ className }) => <IconWrapper className={className}><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></IconWrapper>;
+        const Repeat = ({ className }) => <IconWrapper className={className}><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></IconWrapper>;
+        const CheckCircle2 = ({ className }) => <IconWrapper className={className}><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></IconWrapper>;
+        const LogOut = ({ className }) => <IconWrapper className={className}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></IconWrapper>;
+        const Cloud = ({ className }) => <IconWrapper className={className}><path d="M17.5 19c0-3.037-2.463-5.5-5.5-5.5S6.5 15.963 6.5 19"/><path d="M20 16.5c2.3 0 4 1.2 4 4.5"/><path d="M4 16.5c-2.3 0-4 1.2-4 4.5"/><path d="M12 13.5V6"/><path d="M12 6 8.5 9.5"/><path d="M12 6l3.5 3.5"/></IconWrapper>;
+
+        // --- Default Data ---
+        const DEFAULT_TASKS = [
+            { id: 'm1', text: 'Go for a 30 - 45min Walk', completed: false, category: 'Morning', type: 'daily' },
+            { id: 'm2', text: 'Dinner Menu & Defrost', completed: false, category: 'Morning', type: 'daily' },
+            { id: 'm13', text: 'Prep dinner', completed: false, category: 'Morning', type: 'daily' },
+            { id: 'm3', text: 'Launch Laundry', completed: false, category: 'Morning', type: 'daily' },
+            { id: 'm4', text: 'Learn 1 Chapter of Tanya', completed: false, category: 'Morning', type: 'daily' },
+            { id: 'm5', text: 'Pray Shacharis', completed: false, category: 'Morning', type: 'daily' },
+            { id: 'm6', text: 'Daily Tehilim', completed: false, category: 'Morning', type: 'daily' },
+            { id: 'm7', text: 'Daily Chumash', completed: false, category: 'Morning', type: 'daily' },
+            { id: 'm8', text: 'Daily Tanya', completed: false, category: 'Morning', type: 'daily' },
+            { id: 'm9', text: 'Daily HY & SH', completed: false, category: 'Morning', type: 'daily' },
+            { id: 'm10', text: 'Make Beds', completed: false, category: 'Morning', type: 'daily' },
+            { id: 'm11', text: 'Say Mantra', completed: false, category: 'Morning', type: 'daily' },
+            { id: 'm12', text: 'Today’s Schedule', completed: false, category: 'Morning', type: 'daily' },
+            { id: 'w1', text: 'Summarize 30min of Elisheva', completed: false, category: 'Workplace', type: 'daily' },
+            { id: 'w2', text: 'Read 1 Chapter', completed: false, category: 'Workplace', type: 'daily' },
+            { id: 'w3', text: 'Journal 10min', completed: false, category: 'Workplace', type: 'daily' },
+            { id: 'k1', text: 'Girls’ Food', completed: false, category: 'Kids', type: 'daily' },
+            { id: 'k2', text: 'Girls’ Clothing', completed: false, category: 'Kids', type: 'daily' },
+            { id: 'k3', text: 'Boys’ Clothing', completed: false, category: 'Kids', type: 'daily' },
+            { id: 'k4', text: 'Shmuels’ Food', completed: false, category: 'Kids', type: 'daily' },
+            { id: 'k5', text: 'Showers', completed: false, category: 'Kids', type: 'daily' },
+            { id: 'k6', text: 'Story', completed: false, category: 'Kids', type: 'daily' },
+            { id: 'e1', text: 'Dinner Prep', completed: false, category: 'Evening', type: 'daily' },
+            { id: 'e2', text: 'Bedtime Routine', completed: false, category: 'Evening', type: 'daily' },
+        ];
+
+        const CATEGORIES = [
+            { id: 'All', label: 'All', icon: LayoutGrid, color: 'text-[#FF7F50]', bgColor: 'bg-[#FF7F50]', borderColor: 'border-[#FF7F50]', barColor: 'bg-[#FF7F50]' },
+            { id: 'Morning', label: 'Morning', icon: Sun, color: 'text-[#FDB813]', bgColor: 'bg-[#FDB813]', borderColor: 'border-[#FDB813]', barColor: 'bg-[#FDB813]' },
+            { id: 'Workplace', label: 'Workplace', icon: Coffee, color: 'text-[#A0785A]', bgColor: 'bg-[#A0785A]', borderColor: 'border-[#A0785A]', barColor: 'bg-[#A0785A]' },
+            { id: 'Kids', label: 'Kids', icon: Users, color: 'text-rose-400', bgColor: 'bg-rose-400', borderColor: 'border-rose-400', barColor: 'bg-rose-400' },
+            { id: 'Evening', label: 'Evening', icon: Moon, color: 'text-stone-500', bgColor: 'bg-stone-500', borderColor: 'border-stone-500', barColor: 'bg-stone-400' },
+        ];
+
+        function App() {
+            const [user, setUser] = useState(null);
+            const [tasks, setTasks] = useState([]);
+            const [newTask, setNewTask] = useState('');
+            const [activeTab, setActiveTab] = useState('All');
+            const [inputCategory, setInputCategory] = useState('Morning');
+            const [inputType, setInputType] = useState('daily');
+            const [isInputFocused, setIsInputFocused] = useState(false);
+            const [loading, setLoading] = useState(true);
+            const [authError, setAuthError] = useState(null);
+            const [syncStatus, setSyncStatus] = useState('Checking...');
+            
+            const [editingId, setEditingId] = useState(null);
+            const [editText, setEditText] = useState('');
+            const [draggedTaskId, setDraggedTaskId] = useState(null);
+            const longPressTimer = useRef(null);
+            const isScrolling = useRef(false);
+
+            useEffect(() => {
+                const initAuth = async () => {
+                    try { if (window.auth) await window.setPersistence(window.auth, window.browserLocalPersistence); } catch (e) { console.error(e); }
+                    if (window.onAuthStateChanged) {
+                        window.onAuthStateChanged(window.auth, (currentUser) => {
+                            setUser(currentUser);
+                            if (!currentUser) setLoading(false);
+                        });
+                        window.getRedirectResult(window.auth).catch(e => { setAuthError(e.message); setLoading(false); });
+                    } else {
+                        const interval = setInterval(() => { if (window.auth) { clearInterval(interval); window.onAuthStateChanged(window.auth, (u) => { setUser(u); if(!u) setLoading(false); }); } }, 100);
+                    }
+                };
+                initAuth();
+            }, []);
+
+            useEffect(() => { if (activeTab !== 'All') setInputCategory(activeTab); }, [activeTab]);
+
+            useEffect(() => {
+                if (!user) return;
+                setSyncStatus('Syncing...');
+                const userDocRef = window.doc(window.db, 'users', user.uid);
+                
+                const unsubscribe = window.onSnapshot(userDocRef, (docSnap) => {
+                    const today = new Date().toDateString();
+                    setSyncStatus('Synced');
+                    
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        let loadedTasks = data.items || [];
+                        const lastResetDate = data.lastResetDate;
+
+                        if (lastResetDate !== today) {
+                            console.log("New day detected. Resetting.");
+                            const defaultIds = new Set(DEFAULT_TASKS.map(d => d.id));
+                            const preservedCustomTasks = loadedTasks.filter(t => !defaultIds.has(t.id) && (t.type === 'daily' || (t.type === '1to' && !t.completed))).map(t => (t.type === 'daily' ? { ...t, completed: false } : t));
+                            const freshDefaults = DEFAULT_TASKS.map(t => ({...t, completed: false}));
+                            window.setDoc(userDocRef, { items: [...freshDefaults, ...preservedCustomTasks], lastResetDate: today }, { merge: true });
+                        } else {
+                            const incomplete = loadedTasks.filter(t => !t.completed);
+                            const complete = loadedTasks.filter(t => t.completed);
+                            setTasks([...incomplete, ...complete]);
+                        }
+                    } else {
+                        // NEW USER or FRESH START
+                        let initialTasks = DEFAULT_TASKS;
+                        try { const local = localStorage.getItem('sara_routine_v2'); if (local) { const parsed = JSON.parse(local); if (Array.isArray(parsed) && parsed.length > 0) initialTasks = parsed; } } catch(e) {}
+                        window.setDoc(userDocRef, { items: initialTasks, lastResetDate: today }).catch(err => { 
+                            setSyncStatus('⚠️ Save Failed'); 
+                            if (err.code === 'permission-denied') setAuthError("DATABASE LOCKED: Please fix Firestore Rules in Console."); 
+                        });
+                    }
+                    setLoading(false);
+                }, (error) => { 
+                    setSyncStatus('⚠️ Error'); 
+                    if (error.code === 'permission-denied') setAuthError("DATABASE LOCKED: Go to Firebase Console > Firestore > Rules and change to 'allow read, write: if request.auth != null;'"); 
+                });
+                return () => unsubscribe();
+            }, [user]);
+
+            const loginRedirect = async () => { setAuthError(null); setLoading(true); try { await window.signInWithRedirect(window.auth, window.provider); } catch (e) { setAuthError(e.message); setLoading(false); } };
+            const loginPopup = async () => { setAuthError(null); try { await window.signInWithPopup(window.auth, window.provider); } catch (e) { setAuthError(e.message); } };
+            const logout = () => { window.signOut(window.auth); setTasks([]); setAuthError(null); };
+
+            const saveTasks = (newTasks) => { 
+                if (!user) return; 
+                setTasks(newTasks); // Optimistic
+                setSyncStatus('Saving...');
+                window.setDoc(window.doc(window.db, 'users', user.uid), { items: newTasks }, { merge: true })
+                    .then(() => setSyncStatus('Synced'))
+                    .catch(e => { setSyncStatus('⚠️ Save Failed'); setAuthError("Save Error: " + e.message); });
+            };
+
+            const handleAddTask = (e) => { e.preventDefault(); if (!newTask.trim()) return; const newTaskItem = { id: crypto.randomUUID(), text: newTask.trim(), completed: false, category: inputCategory, type: inputType }; const incomplete = tasks.filter(t => !t.completed); const complete = tasks.filter(t => t.completed); saveTasks([...incomplete, newTaskItem, ...complete]); setNewTask(''); };
+            const toggleTask = (taskId) => { const updatedTasks = tasks.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t); const incomplete = updatedTasks.filter(t => !t.completed); const complete = updatedTasks.filter(t => t.completed); saveTasks([...incomplete, ...complete]); };
+            const deleteTask = (taskId) => { const newTasks = tasks.filter(t => t.id !== taskId); saveTasks(newTasks); };
+            const startEditing = (task) => { setEditingId(task.id); setEditText(task.text); };
+            const saveEdit = () => { if (!editText.trim()) { cancelEdit(); return; } const updatedTasks = tasks.map(t => t.id === editingId ? { ...t, text: editText.trim() } : t); saveTasks(updatedTasks); setEditingId(null); setEditText(''); };
+            const cancelEdit = () => { setEditingId(null); setEditText(''); };
+            const clearCompletedInTab = () => { const newTasks = tasks.reduce((acc, task) => { const isVisible = activeTab === 'All' || task.category === activeTab; if (!isVisible) { acc.push(task); return acc; } if (task.completed) { if (task.type === 'daily') { acc.push({ ...task, completed: false }); } } else { acc.push(task); } return acc; }, []); saveTasks(newTasks); };
+            const handleTouchStart = (e, taskId) => { if (editingId) return; isScrolling.current = false; longPressTimer.current = setTimeout(() => { if (!isScrolling.current) { setDraggedTaskId(taskId); if (navigator.vibrate) navigator.vibrate(50); } }, 500); };
+            const handleTouchMove = (e) => { isScrolling.current = true; if (draggedTaskId) { e.preventDefault(); const touch = e.touches[0]; const element = document.elementFromPoint(touch.clientX, touch.clientY); const row = element?.closest('[data-task-id]'); if (row) { const targetId = row.getAttribute('data-task-id'); if (targetId && targetId !== draggedTaskId) { reorderTasks(draggedTaskId, targetId); } } } else { clearTimeout(longPressTimer.current); } };
+            const handleTouchEnd = () => { clearTimeout(longPressTimer.current); setDraggedTaskId(null); isScrolling.current = false; };
+            const reorderTasks = (draggedId, targetId) => { const dragIndex = tasks.findIndex(t => t.id === draggedId); const targetIndex = tasks.findIndex(t => t.id === targetId); if (tasks[dragIndex].completed || tasks[targetIndex].completed) return; const newTasks = [...tasks]; const [draggedItem] = newTasks.splice(dragIndex, 1); newTasks.splice(targetIndex, 0, draggedItem); saveTasks(newTasks); };
+
+            const filteredTasks = activeTab === 'All' ? tasks : tasks.filter(t => t.category === activeTab);
+            const completedCount = filteredTasks.filter(t => t.completed).length;
+            const progress = filteredTasks.length === 0 ? 0 : Math.round((completedCount / filteredTasks.length) * 100);
+            const activeCategory = CATEGORIES.find(c => c.id === activeTab) || CATEGORIES[0];
+            const getCategoryColor = (cat) => CATEGORIES.find(c => c.id === cat)?.color || 'text-stone-400';
+            const inputColor = CATEGORIES.find(c => c.id === inputCategory)?.color || 'text-stone-400';
+            const getCurrentIcon = () => CATEGORIES.find(c => c.id === inputCategory)?.icon || Sun;
+            const InputIconComponent = getCurrentIcon();
+            const today = new Date();
+            const gregorianDate = today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+            let hebrewDate = ''; try { hebrewDate = new Intl.DateTimeFormat('en-US-u-ca-hebrew', { day: 'numeric', month: 'long' }).format(today); } catch (e) {}
+
+            if (!user) {
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8f5f2] p-6">
+                        <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-sm w-full border border-stone-100">
+                            <h1 className="text-4xl font-script text-stone-800 mb-4">Sara's Routine</h1>
+                            <p className="text-stone-500 mb-8">Sign in to sync your checklist.</p>
+                            {authError && <div className="mb-6 p-4 bg-red-50 text-red-600 text-left text-xs rounded-xl border border-red-100 break-words"><strong>ERROR:</strong> {authError}</div>}
+                            <div className="space-y-3">
+                                <button onClick={loginRedirect} className="w-full bg-[#FF7F50] text-white font-bold py-3 rounded-xl shadow-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2"><Cloud className="w-5 h-5" /><span>Sign in (Redirect)</span></button>
+                                <button onClick={loginPopup} className="w-full bg-stone-100 text-stone-600 font-bold py-3 rounded-xl hover:bg-stone-200 transition-colors flex items-center justify-center gap-2 text-sm"><span>Trouble? Try Popup Login</span></button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen pb-32" onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
+                    <style>{`@import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&display=swap'); .font-script { font-family: 'Dancing Script', cursive; }`}</style>
+                    <header className="bg-white/50 backdrop-blur-xl shadow-sm sticky top-0 z-20 border-b border-stone-200/60 select-none">
+                        <div className="max-w-md mx-auto pt-6 pb-2 px-4">
+                            <div className="flex justify-between items-end mb-4">
+                                <div><h1 className="text-3xl font-script font-bold text-stone-800 tracking-wide transform translate-y-1">Sara's Daily Routine</h1><p className="text-sm text-stone-500 font-medium flex items-center gap-1.5 mt-2"><CalendarIcon className="w-4 h-4" /> <span>{gregorianDate}</span>{hebrewDate && <><span className="text-stone-300">•</span><span className="text-stone-500">{hebrewDate}</span></>}</p></div>
+                                <div className="text-right flex items-center gap-3"><div className="text-right"><div className="flex items-baseline justify-end gap-1"><span className={`text-3xl font-bold ${activeCategory.color}`}>{progress}%</span></div><p className="text-xs text-stone-400 font-medium uppercase tracking-wide">Done</p></div><button onClick={logout} className="p-2 bg-stone-100 rounded-full text-stone-400 hover:text-rose-500 transition-colors"><LogOut className="w-4 h-4" /></button></div>
+                            </div>
+                            <div className="h-2.5 w-full bg-stone-200/50 rounded-full overflow-hidden mb-2"><div className={`h-full transition-all duration-700 ease-out rounded-full opacity-90 ${activeCategory.barColor}`} style={{ width: `${progress}%` }} /></div>
+                        </div>
+                        <div className="flex overflow-x-auto no-scrollbar border-t border-stone-100/50 max-w-md mx-auto bg-white/40 backdrop-blur-md">
+                            {CATEGORIES.map((cat) => (
+                                <button key={cat.id} onClick={() => setActiveTab(cat.id)} className={`flex-1 py-3 min-w-[70px] relative transition-all duration-300 flex flex-col items-center gap-0.5 ${activeTab === cat.id ? 'text-stone-800 bg-white/80' : 'text-stone-400 hover:text-stone-600 hover:bg-white/40'}`}>
+                                    <cat.icon className={`w-5 h-5 mb-0.5 transition-colors ${activeTab === cat.id ? cat.color : 'text-stone-300'}`} />
+                                    <span className={`text-xl font-script font-bold ${activeTab === cat.id ? 'opacity-100' : 'opacity-70'}`}>{cat.label}</span>
+                                    {activeTab === cat.id && <div className={`absolute bottom-0 left-0 right-0 h-0.5 ${cat.barColor}`} />}
+                                </button>
+                            ))}
+                        </div>
+                    </header>
+                    <main className="relative max-w-md mx-auto p-4 z-10">
+                        {loading ? <div className="text-center py-12 text-stone-400 animate-pulse">Loading...</div> : 
+                        filteredTasks.length === 0 ? <div className="text-center py-20 px-8 bg-white/50 rounded-2xl shadow-sm border border-stone-100"><div className={`inline-flex items-center justify-center w-20 h-20 rounded-full bg-stone-100 mb-6 ${activeCategory.color}`}><CheckCircle2 className="w-10 h-10 opacity-60" /></div><h3 className="text-xl font-bold text-stone-800">No tasks here</h3><p className="text-stone-500 mt-2 leading-relaxed">Add your first task below.</p></div> : 
+                        (<div className="space-y-3">{filteredTasks.map((task) => (
+                            <div key={task.id} data-task-id={task.id} onTouchStart={(e) => !task.completed && handleTouchStart(e, task.id)} className={`task-item group relative flex items-center gap-3 p-4 rounded-xl border ${task.completed ? 'border-transparent shadow-none bg-stone-100/50' : 'bg-white border-stone-100 shadow-sm'} ${draggedTaskId === task.id ? 'is-dragging' : ''}`}>
+                                <button onClick={() => toggleTask(task.id)} className={`flex-shrink-0 w-6 h-6 rounded-full border flex items-center justify-center transition-all duration-300 ${task.completed ? `${activeCategory.bgColor} ${activeCategory.borderColor} text-white scale-100` : `border-stone-300 text-transparent hover:border-stone-400 scale-95 hover:scale-100`}`}><Check className="w-3.5 h-3.5" strokeWidth="3" /></button>
+                                <div className="flex-1 min-w-0 py-1">
+                                    {editingId === task.id ? (
+                                        <form onSubmit={(e) => { e.preventDefault(); saveEdit(); }} className="flex items-center gap-2"><input type="text" value={editText} onChange={(e) => setEditText(e.target.value)} className="w-full bg-transparent border-b-2 border-stone-400 focus:border-stone-600 outline-none pb-1 text-stone-800 font-medium" autoFocus onBlur={() => {}} /><button type="submit" className="p-1.5 text-emerald-600 bg-emerald-50 rounded-lg hover:bg-emerald-100"><Check className="w-4 h-4" /></button></form>
+                                    ) : (
+                                        <><div className="flex items-start justify-between gap-2"><p className={`text-base font-medium transition-colors ${task.completed ? 'text-stone-400 line-through' : 'text-stone-700'}`}>{task.text}</p></div>
+                                        <div className="flex items-center gap-2 mt-1">{activeTab === 'All' && <span className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold ${getCategoryColor(task.category)} opacity-80`}>{task.category}</span>}{task.type === 'daily' ? <span className="inline-flex items-center gap-1 text-[10px] text-stone-400 font-medium bg-stone-50 px-1.5 py-0.5 rounded border border-stone-100"><Repeat className="w-3 h-3" /> Daily</span> : <span className="inline-flex items-center gap-1 text-[10px] text-stone-400 font-medium bg-white px-1.5 py-0.5 rounded border border-stone-100">1x Only</span>}</div></>
+                                    )}
+                                </div>
+                                <div className={`flex items-center gap-1 transition-opacity duration-200 ${task.completed ? 'opacity-0' : 'opacity-100'}`}>{!editingId && <><button onClick={() => startEditing(task)} className="p-2 text-stone-300 hover:text-stone-500 rounded-lg transition-colors"><Pencil className="w-4 h-4" /></button><button onClick={() => deleteTask(task.id)} className={`p-2 text-stone-300 hover:${activeCategory.color} hover:bg-stone-50 rounded-lg transition-colors`}><Trash2 className="w-4 h-4" /></button></>}</div>
+                            </div>
+                        ))}{completedCount > 0 && <div className="pt-6 flex justify-center pb-24"><button onClick={clearCompletedInTab} className="flex flex-col items-center gap-1 text-xs font-medium text-stone-400 hover:text-stone-600 bg-white hover:bg-white/80 px-6 py-3 rounded-xl transition-all shadow-sm w-full sm:w-auto border border-stone-100"><span>Reset / Clear Completed Items</span><span className="text-[10px] opacity-70 font-normal">(Resets daily tasks, deletes 1x tasks)</span></button></div>}</div>)}
+                    </main>
+                    <div className={`fixed bottom-0 left-0 right-0 pointer-events-none z-0 pb-1 text-center text-[10px] font-bold ${syncStatus.includes('Error') || syncStatus.includes('Failed') ? 'text-red-500' : 'text-stone-300'}`}>{syncStatus}</div>
+                    <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-white/0 via-[#f8f5f2]/80 to-[#f8f5f2] pt-8 pointer-events-none z-30">
+                        <div className="max-w-md mx-auto pointer-events-auto">
+                            <form onSubmit={handleAddTask} className={`bg-white/80 backdrop-blur-xl rounded-2xl shadow-lg shadow-stone-200/50 border border-stone-100 p-2 flex items-center gap-2 transform transition-all duration-300`}>
+                                <div className="relative group shrink-0"><div className={`p-3 rounded-xl bg-stone-50 cursor-pointer hover:bg-stone-100 transition-colors ${inputColor}`}><InputIconComponent className="w-5 h-5" /></div><select value={inputCategory} onChange={(e) => setInputCategory(e.target.value)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer">{CATEGORIES.filter(c => c.id !== 'All').map(c => (<option key={c.id} value={c.id}>{c.label}</option>))}</select></div>
+                                <input type="text" value={newTask} onChange={(e) => setNewTask(e.target.value)} onFocus={() => setIsInputFocused(true)} onBlur={() => setIsInputFocused(false)} placeholder={`Add to ${inputCategory}...`} className="flex-1 bg-transparent py-3 text-stone-700 placeholder:text-stone-400 font-medium focus:outline-none min-w-0" autoComplete="off" />
+                                <button type="button" onClick={() => setInputType(inputType === 'daily' ? '1to' : 'daily')} className={`shrink-0 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors border ${inputType === 'daily' ? 'bg-stone-100 text-stone-600 border-stone-200' : 'bg-white text-stone-400 border-stone-100'}`}>{inputType === 'daily' ? 'Daily' : '1x'}</button>
+                                <button type="submit" disabled={!newTask.trim()} className={`shrink-0 p-3 rounded-xl text-white transition-all shadow-sm ${!newTask.trim() ? 'bg-stone-200 text-stone-400' : inputCategory === 'Morning' ? 'bg-[#FDB813] hover:opacity-90' : inputCategory === 'Workplace' ? 'bg-[#A0785A] hover:opacity-90' : inputCategory === 'Kids' ? 'bg-rose-400 hover:bg-rose-500' : 'bg-[#FF7F50] hover:opacity-90'}`}><Plus className="w-5 h-5" /></button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
