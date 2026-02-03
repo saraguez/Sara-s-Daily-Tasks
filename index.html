@@ -4,28 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     
-    <!-- iOS Web App Config -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Sara's Routine">
     
-    <!-- APP ICON -->
     <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512' style='background-color:%23FF7F50'%3E%3Crect width='512' height='512' fill='%23FF7F50'/%3E%3Cpath d='M368 128h-16l-48-64c-8.8-11.8-22.8-18.7-37.7-18.7H245.7c-14.9 0-28.9 6.9-37.7 18.7l-48 64h-16c-26.5 0-48 21.5-48 48v224c0 26.5 21.5 48 48 48h224c26.5 0 48-21.5 48-48V176c0-26.5-21.5-48-48-48z' fill='white'/%3E%3Cpath d='M343.3 228.7c6.2-6.2 16.4-6.2 22.6 0s6.2 16.4 0 22.6l-112 112c-6.2 6.2-16.4 6.2-22.6 0l-48-48c-6.2-6.2-6.2-16.4 0-22.6s16.4-6.2 22.6 0l36.7 36.7 100.7-100.7z' fill='%23FF7F50'/%3E%3C/svg%3E">
     <link rel="icon" type="image/x-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512' style='background-color:%23FF7F50'%3E%3Crect width='512' height='512' fill='%23FF7F50'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='300' fill='white'%3E%E2%9C%93%3C/text%3E%3C/svg%3E">
 
     <title>Sara's Daily Routine</title>
     
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&display=swap" rel="stylesheet">
     
-    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     
-    <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <style>
@@ -55,7 +49,6 @@
         </div>
     </div>
 
-    <!-- Firebase Imports via Module Script -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, signInWithRedirect, signInWithPopup, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
@@ -132,6 +125,7 @@
         const Cloud = ({ className }) => <IconWrapper className={className}><path d="M17.5 19c0-3.037-2.463-5.5-5.5-5.5S6.5 15.963 6.5 19"/><path d="M20 16.5c2.3 0 4 1.2 4 4.5"/><path d="M4 16.5c-2.3 0-4 1.2-4 4.5"/><path d="M12 13.5V6"/><path d="M12 6 8.5 9.5"/><path d="M12 6l3.5 3.5"/></IconWrapper>;
 
         // --- Default Data ---
+        // These are ONLY used for a brand new user who has never logged in before.
         const DEFAULT_TASKS = [
             { id: 'm1', text: 'Go for a 30 - 45min Walk', completed: false, category: 'Morning', type: 'daily' },
             { id: 'm2', text: 'Dinner Menu & Defrost', completed: false, category: 'Morning', type: 'daily' },
@@ -219,10 +213,25 @@
 
                         if (lastResetDate !== today) {
                             console.log("New day detected. Resetting.");
-                            const defaultIds = new Set(DEFAULT_TASKS.map(d => d.id));
-                            const preservedCustomTasks = loadedTasks.filter(t => !defaultIds.has(t.id) && (t.type === 'daily' || (t.type === '1to' && !t.completed))).map(t => (t.type === 'daily' ? { ...t, completed: false } : t));
-                            const freshDefaults = DEFAULT_TASKS.map(t => ({...t, completed: false}));
-                            window.setDoc(userDocRef, { items: [...freshDefaults, ...preservedCustomTasks], lastResetDate: today }, { merge: true });
+                            
+                            // --- CHANGED LOGIC HERE ---
+                            // Instead of reloading defaults, we take the CURRENT list of tasks,
+                            // keep the daily ones (and uncheck them), and keep uncompleted 1x tasks.
+                            // This preserves your sort order and text changes.
+                            
+                            const nextDayTasks = loadedTasks.reduce((acc, task) => {
+                                if (task.type === 'daily') {
+                                    // Keep all daily tasks, reset to uncompleted
+                                    acc.push({ ...task, completed: false });
+                                } else if (task.type === '1to' && !task.completed) {
+                                    // Keep 1x tasks only if they are NOT done
+                                    acc.push(task);
+                                }
+                                // Completed 1x tasks are dropped
+                                return acc;
+                            }, []);
+
+                            window.setDoc(userDocRef, { items: nextDayTasks, lastResetDate: today }, { merge: true });
                         } else {
                             const incomplete = loadedTasks.filter(t => !t.completed);
                             const complete = loadedTasks.filter(t => t.completed);
