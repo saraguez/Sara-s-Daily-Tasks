@@ -99,12 +99,6 @@
         const log = (msg) => {
             const timestamp = new Date().toLocaleTimeString();
             console.log(`[${timestamp}] ${msg}`);
-            try {
-                const existing = JSON.parse(sessionStorage.getItem('auth_debug_logs') || '[]');
-                existing.push(`[${timestamp}] ${msg}`);
-                if (existing.length > 50) existing.shift();
-                sessionStorage.setItem('auth_debug_logs', JSON.stringify(existing));
-            } catch (e) {}
         };
 
         // --- Icons ---
@@ -123,35 +117,8 @@
         const CheckCircle2 = ({ className }) => <IconWrapper className={className}><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></IconWrapper>;
         const LogOut = ({ className }) => <IconWrapper className={className}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></IconWrapper>;
         const Cloud = ({ className }) => <IconWrapper className={className}><path d="M17.5 19c0-3.037-2.463-5.5-5.5-5.5S6.5 15.963 6.5 19"/><path d="M20 16.5c2.3 0 4 1.2 4 4.5"/><path d="M4 16.5c-2.3 0-4 1.2-4 4.5"/><path d="M12 13.5V6"/><path d="M12 6 8.5 9.5"/><path d="M12 6l3.5 3.5"/></IconWrapper>;
-
-        // --- Default Data ---
-        // These are ONLY used for a brand new user who has never logged in before.
-        const DEFAULT_TASKS = [
-            { id: 'm1', text: 'Go for a 30 - 45min Walk', completed: false, category: 'Morning', type: 'daily' },
-            { id: 'm2', text: 'Dinner Menu & Defrost', completed: false, category: 'Morning', type: 'daily' },
-            { id: 'm13', text: 'Prep dinner', completed: false, category: 'Morning', type: 'daily' },
-            { id: 'm3', text: 'Launch Laundry', completed: false, category: 'Morning', type: 'daily' },
-            { id: 'm4', text: 'Learn 1 Chapter of Tanya', completed: false, category: 'Morning', type: 'daily' },
-            { id: 'm5', text: 'Pray Shacharis', completed: false, category: 'Morning', type: 'daily' },
-            { id: 'm6', text: 'Daily Tehilim', completed: false, category: 'Morning', type: 'daily' },
-            { id: 'm7', text: 'Daily Chumash', completed: false, category: 'Morning', type: 'daily' },
-            { id: 'm8', text: 'Daily Tanya', completed: false, category: 'Morning', type: 'daily' },
-            { id: 'm9', text: 'Daily HY & SH', completed: false, category: 'Morning', type: 'daily' },
-            { id: 'm10', text: 'Make Beds', completed: false, category: 'Morning', type: 'daily' },
-            { id: 'm11', text: 'Say Mantra', completed: false, category: 'Morning', type: 'daily' },
-            { id: 'm12', text: 'Today’s Schedule', completed: false, category: 'Morning', type: 'daily' },
-            { id: 'w1', text: 'Summarize 30min of Elisheva', completed: false, category: 'Workplace', type: 'daily' },
-            { id: 'w2', text: 'Read 1 Chapter', completed: false, category: 'Workplace', type: 'daily' },
-            { id: 'w3', text: 'Journal 10min', completed: false, category: 'Workplace', type: 'daily' },
-            { id: 'k1', text: 'Girls’ Food', completed: false, category: 'Kids', type: 'daily' },
-            { id: 'k2', text: 'Girls’ Clothing', completed: false, category: 'Kids', type: 'daily' },
-            { id: 'k3', text: 'Boys’ Clothing', completed: false, category: 'Kids', type: 'daily' },
-            { id: 'k4', text: 'Shmuels’ Food', completed: false, category: 'Kids', type: 'daily' },
-            { id: 'k5', text: 'Showers', completed: false, category: 'Kids', type: 'daily' },
-            { id: 'k6', text: 'Story', completed: false, category: 'Kids', type: 'daily' },
-            { id: 'e1', text: 'Dinner Prep', completed: false, category: 'Evening', type: 'daily' },
-            { id: 'e2', text: 'Bedtime Routine', completed: false, category: 'Evening', type: 'daily' },
-        ];
+        const ChevronUp = ({ className }) => <IconWrapper className={className}><path d="m18 15-6-6-6 6"/></IconWrapper>;
+        const ChevronDown = ({ className }) => <IconWrapper className={className}><path d="m6 9 6 6 6-6"/></IconWrapper>;
 
         const CATEGORIES = [
             { id: 'All', label: 'All', icon: LayoutGrid, color: 'text-[#FF7F50]', bgColor: 'bg-[#FF7F50]', borderColor: 'border-[#FF7F50]', barColor: 'bg-[#FF7F50]' },
@@ -159,6 +126,15 @@
             { id: 'Workplace', label: 'Workplace', icon: Coffee, color: 'text-[#A0785A]', bgColor: 'bg-[#A0785A]', borderColor: 'border-[#A0785A]', barColor: 'bg-[#A0785A]' },
             { id: 'Kids', label: 'Kids', icon: Users, color: 'text-rose-400', bgColor: 'bg-rose-400', borderColor: 'border-rose-400', barColor: 'bg-rose-400' },
             { id: 'Evening', label: 'Evening', icon: Moon, color: 'text-stone-500', bgColor: 'bg-stone-500', borderColor: 'border-stone-500', barColor: 'bg-stone-400' },
+        ];
+
+        // Default tasks for new users
+        const DEFAULT_TASKS = [
+            { id: 'm1', text: 'Go for a 30 - 45min Walk', completed: false, category: 'Morning', type: 'daily' },
+            { id: 'm2', text: 'Dinner Menu & Defrost', completed: false, category: 'Morning', type: 'daily' },
+            { id: 'm3', text: 'Launch Laundry', completed: false, category: 'Morning', type: 'daily' },
+            { id: 'm4', text: 'Learn 1 Chapter of Tanya', completed: false, category: 'Morning', type: 'daily' },
+            { id: 'm5', text: 'Pray Shacharis', completed: false, category: 'Morning', type: 'daily' },
         ];
 
         function App() {
@@ -213,43 +189,31 @@
 
                         if (lastResetDate !== today) {
                             console.log("New day detected. Resetting.");
-                            
-                            // --- CHANGED LOGIC HERE ---
-                            // Instead of reloading defaults, we take the CURRENT list of tasks,
-                            // keep the daily ones (and uncheck them), and keep uncompleted 1x tasks.
-                            // This preserves your sort order and text changes.
-                            
+                            // Smart Reset: Keep Daily (reset), Keep 1x (if uncompleted)
                             const nextDayTasks = loadedTasks.reduce((acc, task) => {
                                 if (task.type === 'daily') {
-                                    // Keep all daily tasks, reset to uncompleted
                                     acc.push({ ...task, completed: false });
                                 } else if (task.type === '1to' && !task.completed) {
-                                    // Keep 1x tasks only if they are NOT done
                                     acc.push(task);
                                 }
-                                // Completed 1x tasks are dropped
                                 return acc;
                             }, []);
 
                             window.setDoc(userDocRef, { items: nextDayTasks, lastResetDate: today }, { merge: true });
                         } else {
-                            const incomplete = loadedTasks.filter(t => !t.completed);
-                            const complete = loadedTasks.filter(t => t.completed);
-                            setTasks([...incomplete, ...complete]);
+                            // Load tasks EXACTLY as they are in the DB to preserve order
+                            setTasks(loadedTasks);
                         }
                     } else {
-                        // NEW USER or FRESH START
+                        // New User
                         let initialTasks = DEFAULT_TASKS;
-                        try { const local = localStorage.getItem('sara_routine_v2'); if (local) { const parsed = JSON.parse(local); if (Array.isArray(parsed) && parsed.length > 0) initialTasks = parsed; } } catch(e) {}
                         window.setDoc(userDocRef, { items: initialTasks, lastResetDate: today }).catch(err => { 
                             setSyncStatus('⚠️ Save Failed'); 
-                            if (err.code === 'permission-denied') setAuthError("DATABASE LOCKED: Please fix Firestore Rules in Console."); 
                         });
                     }
                     setLoading(false);
                 }, (error) => { 
                     setSyncStatus('⚠️ Error'); 
-                    if (error.code === 'permission-denied') setAuthError("DATABASE LOCKED: Go to Firebase Console > Firestore > Rules and change to 'allow read, write: if request.auth != null;'"); 
                 });
                 return () => unsubscribe();
             }, [user]);
@@ -260,7 +224,7 @@
 
             const saveTasks = (newTasks) => { 
                 if (!user) return; 
-                setTasks(newTasks); // Optimistic
+                setTasks(newTasks); 
                 setSyncStatus('Saving...');
                 window.setDoc(window.doc(window.db, 'users', user.uid), { items: newTasks }, { merge: true })
                     .then(() => setSyncStatus('Synced'))
@@ -274,10 +238,44 @@
             const saveEdit = () => { if (!editText.trim()) { cancelEdit(); return; } const updatedTasks = tasks.map(t => t.id === editingId ? { ...t, text: editText.trim() } : t); saveTasks(updatedTasks); setEditingId(null); setEditText(''); };
             const cancelEdit = () => { setEditingId(null); setEditText(''); };
             const clearCompletedInTab = () => { const newTasks = tasks.reduce((acc, task) => { const isVisible = activeTab === 'All' || task.category === activeTab; if (!isVisible) { acc.push(task); return acc; } if (task.completed) { if (task.type === 'daily') { acc.push({ ...task, completed: false }); } } else { acc.push(task); } return acc; }, []); saveTasks(newTasks); };
+            
+            // --- Drag & Drop Logic ---
             const handleTouchStart = (e, taskId) => { if (editingId) return; isScrolling.current = false; longPressTimer.current = setTimeout(() => { if (!isScrolling.current) { setDraggedTaskId(taskId); if (navigator.vibrate) navigator.vibrate(50); } }, 500); };
             const handleTouchMove = (e) => { isScrolling.current = true; if (draggedTaskId) { e.preventDefault(); const touch = e.touches[0]; const element = document.elementFromPoint(touch.clientX, touch.clientY); const row = element?.closest('[data-task-id]'); if (row) { const targetId = row.getAttribute('data-task-id'); if (targetId && targetId !== draggedTaskId) { reorderTasks(draggedTaskId, targetId); } } } else { clearTimeout(longPressTimer.current); } };
             const handleTouchEnd = () => { clearTimeout(longPressTimer.current); setDraggedTaskId(null); isScrolling.current = false; };
             const reorderTasks = (draggedId, targetId) => { const dragIndex = tasks.findIndex(t => t.id === draggedId); const targetIndex = tasks.findIndex(t => t.id === targetId); if (tasks[dragIndex].completed || tasks[targetIndex].completed) return; const newTasks = [...tasks]; const [draggedItem] = newTasks.splice(dragIndex, 1); newTasks.splice(targetIndex, 0, draggedItem); saveTasks(newTasks); };
+
+            // --- Arrow Reorder Logic ---
+            const moveTask = (taskId, direction) => {
+                // 1. Find index in current VISIBLE list
+                const filteredTasks = activeTab === 'All' ? tasks : tasks.filter(t => t.category === activeTab);
+                const currentIndex = filteredTasks.findIndex(t => t.id === taskId);
+                if (currentIndex === -1) return;
+
+                // 2. Determine target visual neighbor
+                const targetIndex = currentIndex + direction;
+                if (targetIndex < 0 || targetIndex >= filteredTasks.length) return;
+
+                const taskToMove = filteredTasks[currentIndex];
+                const targetTask = filteredTasks[targetIndex];
+
+                // 3. Perform move in the GLOBAL list safely
+                // We remove taskToMove from global list, then insert it relative to targetTask
+                const tasksWithoutItem = tasks.filter(t => t.id !== taskId);
+                const targetGlobalIndex = tasksWithoutItem.findIndex(t => t.id === targetTask.id);
+                
+                let insertIndex;
+                if (direction === -1) { // Moving Up
+                    insertIndex = targetGlobalIndex; 
+                } else { // Moving Down
+                    insertIndex = targetGlobalIndex + 1;
+                }
+
+                const newGlobalTasks = [...tasksWithoutItem];
+                newGlobalTasks.splice(insertIndex, 0, taskToMove);
+                
+                saveTasks(newGlobalTasks);
+            };
 
             const filteredTasks = activeTab === 'All' ? tasks : tasks.filter(t => t.category === activeTab);
             const completedCount = filteredTasks.filter(t => t.completed).length;
@@ -332,7 +330,13 @@
                         {loading ? <div className="text-center py-12 text-stone-400 animate-pulse">Loading...</div> : 
                         filteredTasks.length === 0 ? <div className="text-center py-20 px-8 bg-white/50 rounded-2xl shadow-sm border border-stone-100"><div className={`inline-flex items-center justify-center w-20 h-20 rounded-full bg-stone-100 mb-6 ${activeCategory.color}`}><CheckCircle2 className="w-10 h-10 opacity-60" /></div><h3 className="text-xl font-bold text-stone-800">No tasks here</h3><p className="text-stone-500 mt-2 leading-relaxed">Add your first task below.</p></div> : 
                         (<div className="space-y-3">{filteredTasks.map((task) => (
-                            <div key={task.id} data-task-id={task.id} onTouchStart={(e) => !task.completed && handleTouchStart(e, task.id)} className={`task-item group relative flex items-center gap-3 p-4 rounded-xl border ${task.completed ? 'border-transparent shadow-none bg-stone-100/50' : 'bg-white border-stone-100 shadow-sm'} ${draggedTaskId === task.id ? 'is-dragging' : ''}`}>
+                            <div key={task.id} data-task-id={task.id} onTouchStart={(e) => !task.completed && handleTouchStart(e, task.id)} className={`task-item group relative flex items-center gap-2 p-4 rounded-xl border ${task.completed ? 'border-transparent shadow-none bg-stone-100/50' : 'bg-white border-stone-100 shadow-sm'} ${draggedTaskId === task.id ? 'is-dragging' : ''}`}>
+                                {!task.completed && (
+                                    <div className="flex flex-col gap-1 pr-2 border-r border-stone-100 mr-1">
+                                        <button onClick={(e) => { e.stopPropagation(); moveTask(task.id, -1); }} className="p-1 rounded hover:bg-stone-100 text-stone-300 hover:text-[#FF7F50] transition-colors"><ChevronUp className="w-4 h-4" /></button>
+                                        <button onClick={(e) => { e.stopPropagation(); moveTask(task.id, 1); }} className="p-1 rounded hover:bg-stone-100 text-stone-300 hover:text-[#FF7F50] transition-colors"><ChevronDown className="w-4 h-4" /></button>
+                                    </div>
+                                )}
                                 <button onClick={() => toggleTask(task.id)} className={`flex-shrink-0 w-6 h-6 rounded-full border flex items-center justify-center transition-all duration-300 ${task.completed ? `${activeCategory.bgColor} ${activeCategory.borderColor} text-white scale-100` : `border-stone-300 text-transparent hover:border-stone-400 scale-95 hover:scale-100`}`}><Check className="w-3.5 h-3.5" strokeWidth="3" /></button>
                                 <div className="flex-1 min-w-0 py-1">
                                     {editingId === task.id ? (
