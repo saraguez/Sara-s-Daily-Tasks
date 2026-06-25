@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Sara's Routine">
@@ -93,6 +94,9 @@
     </script>
 
     <script type="text/babel">
+        /** @jsx React.createElement */
+        /** @jsxFrag React.Fragment */
+        
         const { useState, useEffect, useRef } = React;
 
         // --- Utilities ---
@@ -174,7 +178,7 @@
             useEffect(() => { if (activeTab !== 'All') setInputCategory(activeTab); }, [activeTab]);
 
             useEffect(() => {
-                if (!user) return;
+                if (!user || !window.db || !window.doc) return; // <-- DEFENSIVE CHECK ADDED HERE
                 setSyncStatus('Syncing...');
                 const userDocRef = window.doc(window.db, 'users', user.uid);
                 
